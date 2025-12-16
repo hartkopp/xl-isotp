@@ -324,7 +324,7 @@ static bool chk_optimized_fail(struct canfd_frame *cf, int start_index)
 	 * start at cf.data[7] cf->len has to be 7 to be optimal.
 	 * Note: The data[] index starts with zero.
 	 */
-	if (cf->len <= CAN_MAX_DLEN)
+	if (cf->len <= CAN_ISOTP_MIN_TX_DL)
 		return (cf->len != start_index);
 
 	/* This relation is also valid in the non-linear DLC range, where
@@ -519,7 +519,7 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
 	}
 
 	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
-	off = (so->rx.ll_dl > CAN_MAX_DLEN) ? 1 : 0;
+	off = (so->rx.ll_dl > CAN_ISOTP_MIN_TX_DL) ? 1 : 0;
 
 	if (so->rx.len + ae + off + ff_pci_sz < so->rx.ll_dl)
 		return;
@@ -1002,7 +1002,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	}
 
 	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
-	off = (so->tx.ll_dl > CAN_MAX_DLEN) ? 1 : 0;
+	off = (so->tx.ll_dl > CAN_ISOTP_MIN_TX_DL) ? 1 : 0;
 
 	/* does the given data fit into a single frame for SF_BROADCAST? */
 	if ((isotp_bc_flags(so) == CAN_ISOTP_SF_BROADCAST) &&
@@ -1062,7 +1062,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		 * This prevents a protocol caused length extension from
 		 * CAN_DL = 8 to CAN_DL = 12 due to the SF_SL ESC handling.
 		 */
-		if (size <= CAN_MAX_DLEN - SF_PCI_SZ4 - ae)
+		if (size <= CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae)
 			off = 0;
 
 		isotp_fill_dataframe(cf, so, ae, off);
