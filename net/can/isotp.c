@@ -654,9 +654,9 @@ static void isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
 	return;
 }
 
-static void isotp_rcv(struct sk_buff *skb, void *data)
+static void isotp_rcv(struct sk_buff *skb, void *skdata)
 {
-	struct sock *sk = (struct sock *)data;
+	struct sock *sk = (struct sock *)skdata;
 	struct isotp_sock *so = isotp_sk(sk);
 	struct canfd_frame *cf;
 	int ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
