@@ -759,13 +759,13 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
 {
 	int pcilen = N_PCI_SZ + ae + off;
 	int space = so->tx.ll_dl - pcilen;
-	int num = min_t(int, so->tx.len - so->tx.idx, space);
+	int reqlen = min_t(int, so->tx.len - so->tx.idx, space);
 	int i;
 
 	cf->can_id = so->txid;
-	cf->len = num + pcilen;
+	cf->len = reqlen + pcilen;
 
-	if (num < space) {
+	if (reqlen < space) {
 		if (so->opt.flags & CAN_ISOTP_TX_PADDING) {
 			/* user requested padding */
 			cf->len = padlen(cf->len);
@@ -778,7 +778,7 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
 		}
 	}
 
-	for (i = 0; i < num; i++)
+	for (i = 0; i < reqlen; i++)
 		cf->data[pcilen + i] = so->tx.buf[so->tx.idx++];
 
 	if (ae)
