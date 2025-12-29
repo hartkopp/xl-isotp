@@ -589,6 +589,10 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
 		so->rx.len += cf->data[ae + 4] << 8;
 		so->rx.len += cf->data[ae + 5];
 		ff_pci_sz = FF_PCI_SZ32;
+
+		/* unneeded escape sequence => ignore PDU according to spec */
+		if (so->rx.len <= MAX_12BIT_PDU_SIZE)
+			return;
 	}
 
 	/* single FF's are not allowed. rx.len has to require a CF */
