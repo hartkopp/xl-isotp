@@ -489,7 +489,6 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
 {
 	struct isotp_sock *so = isotp_sk(sk);
 	int i;
-	int off;
 	int ff_pci_sz;
 
 	hrtimer_cancel(&so->rxtimer);
@@ -518,10 +517,8 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
 		ff_pci_sz = FF_PCI_SZ32;
 	}
 
-	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
-	off = (so->rx.ll_dl > CAN_ISOTP_MIN_TX_DL) ? 1 : 0;
-
-	if (so->rx.len + ae + off + ff_pci_sz < so->rx.ll_dl)
+	/* single FF's are not allowed. rx.len has to require a CF */
+	if (so->rx.len + ae + ff_pci_sz <= so->rx.ll_dl)
 		return;
 
 	/* PDU size > default => try max_pdu_size */
