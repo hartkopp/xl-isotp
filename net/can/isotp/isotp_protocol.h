@@ -88,4 +88,10 @@ static bool isotp_tx_gen_done(struct isotp_sock *so, u32 gen)
 	       READ_ONCE(so->tx_gen) != gen;
 }
 
+/* CAN FD requires e.g. mandatory padding for TX_DL > 8 */
+static bool fd_pdu(struct isotp_sock *so)
+{
+	return (so->ll.mtu == CANFD_MTU);
+}
+
 #endif /* _ISOTP_PROTOCOL_H_ */
