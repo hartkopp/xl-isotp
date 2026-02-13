@@ -75,4 +75,10 @@ static inline int isotp_get_tx_result(struct isotp_sock *so, u32 gen)
 	return -(isotp_get_tx_err(result));
 }
 
+/* CAN FD requires e.g. mandatory padding for TX_DL > 8 */
+static inline bool fd_pdu(struct isotp_sock *so)
+{
+	return (so->ll.mtu == CANFD_MTU);
+}
+
 #endif /* _ISOTP_PROTOCOL_H_ */
