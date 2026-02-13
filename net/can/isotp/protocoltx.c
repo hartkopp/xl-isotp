@@ -38,16 +38,67 @@
 /* can-isotp module parameter, see isotp.c */
 extern unsigned int max_pdu_size;
 
+/* calculate CAN protocol specific length for CAN sk_buffs */
+static int isotp_tx_skb_len(struct isotp_sock *so, unsigned int datalen)
+{
+	return so->ll.mtu;
+}
+
+/* fill CC/FD frame and return the pointer to the frame data section */
+static u8 *isotp_fill_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+				 unsigned int datalen)
+{
+	/* all types of CAN frames start at skb->data */
+	struct canfd_frame *cf = (struct canfd_frame *)skb->data;
+
+	/* fill CAN CC/FD frame */
+	cf->can_id = so->txid;
+	cf->flags = so->ll.tx_flags;
+	cf->len = datalen;
+
+	return (u8 *)&cf->data;
+}
+
+static int get_padlength(struct isotp_sock *so, unsigned int *datalen,
+			 u8 *padval)
+{
+	int padlength;
+
+	if (so->opt.flags & CAN_ISOTP_TX_PADDING) {
+		/* user requested CC/FD PDU padding */
+		*padval = so->opt.txpad_content;
+	} else if (fd_pdu(so) && *datalen > CAN_ISOTP_MIN_TX_DL) {
+		/* mandatory padding for CAN FD PDUs */
+		*padval = CAN_ISOTP_DEFAULT_PAD_CONTENT;
+	} else {
+		/* no padding -> zero padlength */
+		return 0;
+	}
+
+	/* increase payload length for padding */
+	padlength = padlen(*datalen);
+	*datalen = padlength;
+
+	return padlength;
+}
+
 void isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
 {
 	struct net_device *dev;
 	struct sk_buff *nskb;
 	struct can_skb_ext *csx;
-	struct canfd_frame *ncf;
 	struct isotp_sock *so = isotp_sk(sk);
+	unsigned int datalen = ae + FC_CONTENT_SZ;
+	int skblen;
+	int padlength = 0;
+	u8 padval;
+	u8 *data;
 	int can_send_ret;
 
-	nskb = alloc_skb(so->ll.mtu, gfp_any());
+	skblen = isotp_tx_skb_len(so, datalen);
+
+	/* create & send flow control reply */
+	nskb = alloc_skb(skblen, gfp_any());
 	if (!nskb)
 		return;
 
@@ -66,27 +117,23 @@ void isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
 	csx->can_iif = dev->ifindex;
 	nskb->dev = dev;
 	can_skb_set_owner(nskb, sk);
-	ncf = (struct canfd_frame *)nskb->data;
-	skb_put_zero(nskb, so->ll.mtu);
+	skb_put_zero(nskb, skblen);
 
-	/* create & send flow control reply */
-	ncf->can_id = so->txid;
+	/* increase length for padding of CAN CC/FD frames */
+	padlength = get_padlength(so, &datalen, &padval);
 
-	if (so->opt.flags & CAN_ISOTP_TX_PADDING) {
-		memset(ncf->data, so->opt.txpad_content, CAN_MAX_DLEN);
-		ncf->len = CAN_MAX_DLEN;
-	} else {
-		ncf->len = ae + FC_CONTENT_SZ;
-	}
+	/* fill CAN frame and return pointer to CAN frame data */
+	data = isotp_fill_frame_head(so, nskb, datalen);
 
-	ncf->data[ae] = N_PCI_FC | flowstatus;
-	ncf->data[ae + 1] = so->rxfc.bs;
-	ncf->data[ae + 2] = so->rxfc.stmin;
+	if (padlength)
+		memset(data, padval, datalen);
+
+	*(data + ae) = N_PCI_FC | flowstatus;
+	*(data + ae + 1) = so->rxfc.bs;
+	*(data + ae + 2) = so->rxfc.stmin;
 
 	if (ae)
-		ncf->data[0] = so->opt.ext_address;
-
-	ncf->flags = so->ll.tx_flags;
+		*(data) = so->opt.ext_address;
 
 	can_send_ret = can_send(nskb, 1);
 	if (can_send_ret)
@@ -106,52 +153,30 @@ void isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
 		      HRTIMER_MODE_REL_SOFT);
 }
 
-static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
-				 int ae, int off)
-{
-	int pcilen = N_PCI_SZ + ae + off;
-	int space = so->tx.ll_dl - pcilen;
-	int reqlen = min_t(int, so->tx.len - so->tx.idx, space);
-	int i;
-
-	cf->can_id = so->txid;
-	cf->len = reqlen + pcilen;
-
-	if (reqlen < space) {
-		if (so->opt.flags & CAN_ISOTP_TX_PADDING) {
-			/* user requested padding */
-			cf->len = padlen(cf->len);
-			memset(cf->data, so->opt.txpad_content, cf->len);
-		} else if (cf->len > CAN_MAX_DLEN) {
-			/* mandatory padding for CAN FD frames */
-			cf->len = padlen(cf->len);
-			memset(cf->data, CAN_ISOTP_DEFAULT_PAD_CONTENT,
-			       cf->len);
-		}
-	}
-
-	for (i = 0; i < reqlen; i++)
-		cf->data[pcilen + i] = so->tx.buf[so->tx.idx++];
-
-	if (ae)
-		cf->data[0] = so->opt.ext_address;
-}
-
 void isotp_send_cframe(struct isotp_sock *so)
 {
 	struct sock *sk = &so->sk;
 	struct sk_buff *skb;
 	struct can_skb_ext *csx;
 	struct net_device *dev;
-	struct canfd_frame *cf;
-	int can_send_ret;
 	int ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
+	int aepcilen = N_PCI_SZ + ae;
+	int space = so->tx.ll_dl - aepcilen;
+	int reqlen = min_t(int, so->tx.len - so->tx.idx, space);
+	unsigned int datalen = reqlen + aepcilen;
+	int skblen;
+	int padlength = 0;
+	u8 padval;
+	u8 *data;
+	int can_send_ret;
+
+	skblen = isotp_tx_skb_len(so, datalen);
 
 	dev = dev_get_by_index(sock_net(sk), so->ifindex);
 	if (!dev)
 		return;
 
-	skb = alloc_skb(so->ll.mtu, GFP_ATOMIC);
+	skb = alloc_skb(skblen, GFP_ATOMIC);
 	if (!skb) {
 		dev_put(dev);
 		return;
@@ -169,18 +194,32 @@ void isotp_send_cframe(struct isotp_sock *so)
 	/* set uid in tx skb to identify CF echo frames */
 	can_set_skb_uid(skb);
 
-	cf = (struct canfd_frame *)skb->data;
-	skb_put_zero(skb, so->ll.mtu);
+	skb_put_zero(skb, skblen);
 
-	/* create consecutive frame */
-	isotp_fill_dataframe(cf, so, ae, 0);
+	/* increase length for padding of CAN CC/FD frames */
+	if (reqlen < space)
+		padlength = get_padlength(so, &datalen, &padval);
+
+	/* fill CAN frame and return pointer to CAN frame data */
+	data = isotp_fill_frame_head(so, skb, datalen);
+
+	if (padlength)
+		memset(data, padval, datalen);
+
+	/* copy data behind the PCI */
+	memcpy(data + aepcilen, so->tx.buf + so->tx.idx, reqlen);
+	so->tx.idx += reqlen;
+
+	/* add extended address */
+	if (ae)
+		*(data) = so->opt.ext_address;
 
 	/* place consecutive frame N_PCI in appropriate index */
-	cf->data[ae] = N_PCI_CF | so->tx.sn++;
+	*(data + ae) = N_PCI_CF | so->tx.sn++;
+
+	/* update protocol counters */
 	so->tx.sn %= 16;
 	so->tx.bs++;
-
-	cf->flags = so->ll.tx_flags;
 
 	skb->dev = dev;
 	can_skb_set_owner(skb, sk);
@@ -203,39 +242,81 @@ void isotp_send_cframe(struct isotp_sock *so)
 	dev_put(dev);
 }
 
-static void isotp_create_fframe(struct canfd_frame *cf, struct isotp_sock *so,
-				int ae)
+/* create full FF PCI with optional AE and return the required PCI size */
+static int isotp_ff_pci(struct isotp_sock *so, u8 *aepci)
 {
-	int i;
+	int ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
 	int ff_pci_sz;
 
-	cf->can_id = so->txid;
-	cf->len = so->tx.ll_dl;
 	if (ae)
-		cf->data[0] = so->opt.ext_address;
+		*(aepci) = so->opt.ext_address;
 
 	/* create N_PCI bytes with 12/32 bit FF_DL data length */
 	if (so->tx.len > MAX_12BIT_PDU_SIZE) {
 		/* use 32 bit FF_DL notation */
-		cf->data[ae] = N_PCI_FF;
-		cf->data[ae + 1] = 0;
-		cf->data[ae + 2] = (u8)(so->tx.len >> 24) & 0xFFU;
-		cf->data[ae + 3] = (u8)(so->tx.len >> 16) & 0xFFU;
-		cf->data[ae + 4] = (u8)(so->tx.len >> 8) & 0xFFU;
-		cf->data[ae + 5] = (u8)so->tx.len & 0xFFU;
+		*(aepci + ae) = N_PCI_FF;
+		*(aepci + ae + 1) = 0;
+		*(aepci + ae + 2) = (u8)(so->tx.len >> 24) & 0xFFU;
+		*(aepci + ae + 3) = (u8)(so->tx.len >> 16) & 0xFFU;
+		*(aepci + ae + 4) = (u8)(so->tx.len >> 8) & 0xFFU;
+		*(aepci + ae + 5) = (u8)so->tx.len & 0xFFU;
 		ff_pci_sz = FF_PCI_SZ32;
 	} else {
 		/* use 12 bit FF_DL notation */
-		cf->data[ae] = (u8)(so->tx.len >> 8) | N_PCI_FF;
-		cf->data[ae + 1] = (u8)so->tx.len & 0xFFU;
+		*(aepci + ae) = (u8)(so->tx.len >> 8) | N_PCI_FF;
+		*(aepci + ae + 1) = (u8)so->tx.len & 0xFFU;
 		ff_pci_sz = FF_PCI_SZ12;
 	}
 
-	/* add first data bytes depending on ae */
-	for (i = ae + ff_pci_sz; i < so->tx.ll_dl; i++)
-		cf->data[i] = so->tx.buf[so->tx.idx++];
+	return ff_pci_sz + ae;
+}
 
-	so->tx.sn = 1;
+/* create full SF/FF PCI with optional AE and return the required PCI size */
+static unsigned int isotp_sf_ff_pci(struct isotp_sock *so, u8 *aepci)
+{
+	int ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
+	int aepcilen;
+
+	/* check for shortest SF PCI with 4 bit data length 1 .. 7 */
+	if (so->tx.ll_dl == CAN_ISOTP_MIN_TX_DL) {
+		if (so->tx.len > so->tx.ll_dl - SF_PCI_SZ4 - ae) {
+			/* FF */
+			aepcilen = isotp_ff_pci(so, aepci);
+		} else {
+			if (ae)
+				*(aepci) = so->opt.ext_address;
+
+			*(aepci + ae) = (u8)(so->tx.len) | N_PCI_SF;
+			aepcilen = SF_PCI_SZ4 + ae;
+		}
+
+		return aepcilen;
+	}
+
+	/* TX_DL > 8 => CAN FD and CAN XL have the same kind of SF PCI length
+	 * extension. So we can check for FF segmentation with SF_PCI_SZ8.
+	 */
+	if (so->tx.len > so->tx.ll_dl - SF_PCI_SZ8 - ae) {
+		/* FF */
+		aepcilen = isotp_ff_pci(so, aepci);
+	} else if (so->tx.len <= CAN_MAX_DLEN - SF_PCI_SZ4 - ae) {
+		/* short PDU with CAN CC length information 1 .. 6/7 byte */
+		if (ae)
+			*(aepci) = so->opt.ext_address;
+
+		*(aepci + ae) = (u8)(so->tx.len) | N_PCI_SF;
+		aepcilen = SF_PCI_SZ4 + ae;
+	} else {
+		if (ae)
+			*(aepci) = so->opt.ext_address;
+
+		/* CAN FD: sf_dl = 0 escape sequence in first PCI byte */
+		*(aepci + ae) = N_PCI_SF;
+		*(aepci + ae + 1) = (u8)so->tx.len & 0xFFU;
+		aepcilen = SF_PCI_SZ8 + ae;
+	}
+
+	return aepcilen;
 }
 
 void isotp_rcv_echo(struct sk_buff *skb, void *data)
@@ -288,11 +369,18 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	struct sk_buff *skb;
 	struct can_skb_ext *csx;
 	struct net_device *dev;
-	struct canfd_frame *cf;
 	int ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
 	int wait_tx_done = (so->opt.flags & CAN_ISOTP_WAIT_TX_DONE) ? 1 : 0;
 	s64 hrtimer_sec = ISOTP_ECHO_TIMEOUT;
-	int off;
+	u8 aepci[1 + FF_PCI_SZ32];
+	int aepcilen;
+	int space;
+	int reqlen;
+	int datalen;
+	int skblen;
+	int padlength = 0;
+	u8 padval;
+	u8 *data;
 	int err;
 
 	if (!so->bound || so->tx.state == ISOTP_SHUTDOWN)
@@ -327,19 +415,27 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		goto err_out_drop;
 	}
 
-	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
-	off = (so->tx.ll_dl > CAN_ISOTP_MIN_TX_DL) ? 1 : 0;
+	err = memcpy_from_msg(so->tx.buf, msg, size);
+	if (err < 0)
+		goto err_out_drop;
+
+	so->tx.len = size;
+	so->tx.idx = 0;
+
+	aepcilen = isotp_sf_ff_pci(so, aepci);
 
 	/* does the given data fit into a single frame for SF_BROADCAST? */
-	if ((isotp_bc_flags(so) == CAN_ISOTP_SF_BROADCAST) &&
-	    (size > so->tx.ll_dl - SF_PCI_SZ4 - ae - off)) {
+	if (isotp_bc_flags(so) == CAN_ISOTP_SF_BROADCAST &&
+	    N_PCI(aepci[ae]) != N_PCI_SF) {
 		err = -EINVAL;
 		goto err_out_drop;
 	}
 
-	err = memcpy_from_msg(so->tx.buf, msg, size);
-	if (err < 0)
-		goto err_out_drop;
+	space = so->tx.ll_dl - aepcilen;
+	reqlen = min_t(int, size, space);
+	datalen = reqlen + aepcilen;
+
+	skblen = isotp_tx_skb_len(so, datalen);
 
 	dev = dev_get_by_index(sock_net(sk), so->ifindex);
 	if (!dev) {
@@ -347,7 +443,7 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		goto err_out_drop;
 	}
 
-	skb = sock_alloc_send_skb(sk, so->ll.mtu, msg->msg_flags & MSG_DONTWAIT,
+	skb = sock_alloc_send_skb(sk, skblen, msg->msg_flags & MSG_DONTWAIT,
 				  &err);
 	if (!skb) {
 		dev_put(dev);
@@ -367,47 +463,44 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	/* set uid in tx skb to identify CF echo frames */
 	can_set_skb_uid(skb);
 
-	so->tx.len = size;
-	so->tx.idx = 0;
+	skb_put_zero(skb, skblen);
 
-	cf = (struct canfd_frame *)skb->data;
-	skb_put_zero(skb, so->ll.mtu);
+	/* check for single frame padding (N_PCI_SF) */
+	if (N_PCI(aepci[ae]) == N_PCI_SF && reqlen < space)
+		padlength = get_padlength(so, &datalen, &padval);
+
+	/* fill CAN frame and return pointer to CAN frame data */
+	data = isotp_fill_frame_head(so, skb, datalen);
 
 	/* cfecho should have been zero'ed by init / former isotp_rcv_echo() */
 	if (so->cfecho)
 		pr_notice_once("can-isotp: uninit cfecho %08X\n", so->cfecho);
 
-	/* check for single frame transmission depending on TX_DL */
-	if (size <= so->tx.ll_dl - SF_PCI_SZ4 - ae - off) {
-		/* The message size generally fits into a SingleFrame - good.
-		 *
-		 * SF_DL ESC offset optimization:
-		 *
-		 * When TX_DL is greater 8 but the message would still fit
-		 * into a 8 byte CAN frame, we can omit the offset.
-		 * This prevents a protocol caused length extension from
-		 * CAN_DL = 8 to CAN_DL = 12 due to the SF_SL ESC handling.
-		 */
-		if (size <= CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae)
-			off = 0;
+	/* check for single frame (N_PCI_SF) */
+	if (N_PCI(aepci[ae]) == N_PCI_SF) {
+		if (padlength)
+			memset(data, padval, datalen);
 
-		isotp_fill_dataframe(cf, so, ae, off);
+		/* copy AE and PCI information */
+		memcpy(data, aepci, aepcilen);
 
-		/* place single frame N_PCI w/o length in appropriate index */
-		cf->data[ae] = N_PCI_SF;
-
-		/* place SF_DL size value depending on the SF_DL ESC offset */
-		if (off)
-			cf->data[SF_PCI_SZ4 + ae] = size;
-		else
-			cf->data[ae] |= size;
+		/* copy data behind AE and PCI information */
+		memcpy(data + aepcilen, so->tx.buf, size);
+		so->tx.idx += size;
 
 		/* set CF echo tag for isotp_rcv_echo() (SF-mode) */
 		so->cfecho = skb->hash;
 	} else {
-		/* send first frame */
+		/* first frame of this sequence */
+		so->tx.sn = 1;
 
-		isotp_create_fframe(cf, so, ae);
+		/* copy AE and PCI information */
+		memcpy(data, aepci, aepcilen);
+
+		/* copy data behind AE and PCI information */
+		memcpy(data + aepcilen, so->tx.buf, so->tx.ll_dl - aepcilen);
+
+		so->tx.idx += so->tx.ll_dl - aepcilen;
 
 		if (isotp_bc_flags(so) == CAN_ISOTP_CF_BROADCAST) {
 			/* set timer for FC-less operation (STmin = 0) */
@@ -437,8 +530,6 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		      HRTIMER_MODE_REL_SOFT);
 
 	/* send the first or only CAN frame */
-	cf->flags = so->ll.tx_flags;
-
 	skb->dev = dev;
 	skb->sk = sk;
 	err = can_send(skb, 1);
