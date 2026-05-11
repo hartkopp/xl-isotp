@@ -569,6 +569,12 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
 		}
 		break;
 
+	case N_PCI_MF:
+		/* rx path: multicast first frame */
+		if (!(so->opt.flags & CAN_ISOTP_LISTEN_MODE))
+			break;
+		fallthrough;
+
 	case N_PCI_FF:
 		/* rx path: first frame */
 		isotp_rcv_ff(sk, data, datalen);
