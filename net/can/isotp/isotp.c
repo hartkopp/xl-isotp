@@ -408,6 +408,7 @@ static int isotp_setsockopt_locked(struct socket *sock, int level, int optname,
 	struct sock *sk = sock->sk;
 	struct isotp_sock *so = isotp_sk(sk);
 	int ret = 0;
+	int bcfl_num = 0;
 
 	if (so->bound)
 		return -EISCONN;
@@ -420,18 +421,25 @@ static int isotp_setsockopt_locked(struct socket *sock, int level, int optname,
 		if (copy_from_sockptr(&so->opt, optval, optlen))
 			return -EFAULT;
 
+		/* support only one broadcast flag at a time */
+		if (isotp_bc_flags(so)) {
+			if (so->opt.flags & CAN_ISOTP_SF_BROADCAST)
+				bcfl_num++;
+
+			if (so->opt.flags & CAN_ISOTP_CF_BROADCAST)
+				bcfl_num++;
+
+			if (so->opt.flags & CAN_ISOTP_MF_BROADCAST)
+				bcfl_num++;
+
+			/* give user feedback on wrong config attempt */
+			if (bcfl_num > 1)
+				return -EINVAL;
+		}
+
 		/* no separate rx_ext_address is given => use ext_address */
 		if (!(so->opt.flags & CAN_ISOTP_RX_EXT_ADDR))
 			so->opt.rx_ext_address = so->opt.ext_address;
-
-		/* these broadcast flags are not allowed together */
-		if (isotp_bc_flags(so) == ISOTP_ALL_BC_FLAGS) {
-			/* CAN_ISOTP_SF_BROADCAST is prioritized */
-			so->opt.flags &= ~CAN_ISOTP_CF_BROADCAST;
-
-			/* give user feedback on wrong config attempt */
-			ret = -EINVAL;
-		}
 
 		/* check for frame_txtime changes (0 => no changes) */
 		if (so->opt.frame_txtime) {

@@ -43,6 +43,7 @@
 #define N_PCI_FF 0x10	/* first frame */
 #define N_PCI_CF 0x20	/* consecutive frame */
 #define N_PCI_FC 0x30	/* flow control */
+#define N_PCI_MF 0x40	/* multicast first frame */
 #define N_PCI_MASK 0xF0	/* to mask the N_PCI type value */
 
 #define N_PCI(pci) ((pci) & N_PCI_MASK)
@@ -57,7 +58,9 @@
 #define FC_CONTENT_SZ 3	/* flow control content size in byte (FS/BS/STmin) */
 
 #define ISOTP_CHECK_PADDING (CAN_ISOTP_CHK_PAD_LEN | CAN_ISOTP_CHK_PAD_DATA)
-#define ISOTP_ALL_BC_FLAGS (CAN_ISOTP_SF_BROADCAST | CAN_ISOTP_CF_BROADCAST)
+#define ISOTP_ALL_BC_FLAGS (CAN_ISOTP_SF_BROADCAST | \
+			    CAN_ISOTP_CF_BROADCAST | \
+			    CAN_ISOTP_MF_BROADCAST)
 
 /* Flow Status given in FC frame */
 #define ISOTP_FC_CTS 0		/* clear to send */
