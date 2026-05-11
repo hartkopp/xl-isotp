@@ -41,22 +41,44 @@ extern unsigned int max_pdu_size;
 /* calculate CAN protocol specific length for CAN sk_buffs */
 static int isotp_tx_skb_len(struct isotp_sock *so, unsigned int datalen)
 {
-	return so->ll.mtu;
+	if (xl_encap(so))
+		return CANXL_HDR_SIZE + datalen;
+	else
+		return so->ll.mtu;
 }
 
-/* fill CC/FD frame and return the pointer to the frame data section */
+/* fill CC/FD/XL frame and return the pointer to the frame data section */
 static u8 *isotp_fill_frame_head(struct isotp_sock *so, struct sk_buff *skb,
 				 unsigned int datalen)
 {
 	/* all types of CAN frames start at skb->data */
-	struct canfd_frame *cf = (struct canfd_frame *)skb->data;
+	union cfu *cu = (union cfu *)skb->data;
+
+	/* fill CAN XL frame */
+	if (xl_encap(so)) {
+		cu->xl.prio = so->txid;
+		cu->xl.flags = so->xl.tx_flags; /* incl. SEC/RRS */
+		cu->xl.af = so->af_txaddr;
+		cu->xl.len = datalen;
+		cu->xl.sdt = so->xl.sdt_mode;
+		if (so->xl.tx_vcid)
+			cu->xl.prio |= (so->xl.tx_vcid << CANXL_VCID_OFFSET);
+
+		return (u8 *)&cu->xl.data;
+	}
 
 	/* fill CAN CC/FD frame */
-	cf->can_id = so->txid;
-	cf->flags = so->ll.tx_flags;
-	cf->len = datalen;
+	cu->fd.can_id = so->txid;
+	cu->fd.flags = so->ll.tx_flags;
+	cu->fd.len = datalen;
 
-	return (u8 *)&cf->data;
+	return (u8 *)&cu->fd.data;
+}
+
+static inline bool isotp_req_pad(struct isotp_sock *so, unsigned int datalen)
+{
+	return ((fd_pdu(so) && datalen > CAN_ISOTP_MIN_TX_DL) ||
+		(so->opt.flags & CAN_ISOTP_TX_PADDING));
 }
 
 static int get_padlength(struct isotp_sock *so, unsigned int *datalen,
@@ -95,7 +117,11 @@ void isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
 	u8 *data;
 	int can_send_ret;
 
-	skblen = isotp_tx_skb_len(so, datalen);
+	/* increase skb->len for CAN FC padding */
+	if (so->opt.flags & CAN_ISOTP_TX_PADDING)
+		skblen = isotp_tx_skb_len(so, CAN_ISOTP_MIN_TX_DL);
+	else
+		skblen = isotp_tx_skb_len(so, datalen);
 
 	/* create & send flow control reply */
 	nskb = alloc_skb(skblen, gfp_any());
@@ -170,7 +196,11 @@ void isotp_send_cframe(struct isotp_sock *so)
 	u8 *data;
 	int can_send_ret;
 
-	skblen = isotp_tx_skb_len(so, datalen);
+	/* increase skb->len for CAN CC/FD padding */
+	if (reqlen < space && isotp_req_pad(so, datalen))
+		skblen = isotp_tx_skb_len(so, padlen(datalen));
+	else
+		skblen = isotp_tx_skb_len(so, datalen);
 
 	dev = dev_get_by_index(sock_net(sk), so->ifindex);
 	if (!dev)
@@ -294,9 +324,9 @@ static unsigned int isotp_sf_ff_pci(struct isotp_sock *so, u8 *aepci)
 	}
 
 	/* TX_DL > 8 => CAN FD and CAN XL have the same kind of SF PCI length
-	 * extension. So we can check for FF segmentation with SF_PCI_SZ8.
+	 * extension. So we can check for FF segmentation with SF_PCI_SZ11.
 	 */
-	if (so->tx.len > so->tx.ll_dl - SF_PCI_SZ8 - ae) {
+	if (so->tx.len > so->tx.ll_dl - SF_PCI_SZ11 - ae) {
 		/* FF */
 		aepcilen = isotp_ff_pci(so, aepci);
 	} else if (so->tx.len <= CAN_MAX_DLEN - SF_PCI_SZ4 - ae) {
@@ -307,13 +337,18 @@ static unsigned int isotp_sf_ff_pci(struct isotp_sock *so, u8 *aepci)
 		*(aepci + ae) = (u8)(so->tx.len) | N_PCI_SF;
 		aepcilen = SF_PCI_SZ4 + ae;
 	} else {
+		/* extended 2 byte SF PCI for CAN FD or CAN XL */
 		if (ae)
 			*(aepci) = so->opt.ext_address;
 
-		/* CAN FD: sf_dl = 0 escape sequence in first PCI byte */
-		*(aepci + ae) = N_PCI_SF;
+		/* follow 12 bit FF_DL notation for 6/11 bit FD/XL SF DL */
+		*(aepci + ae) = (u8)(so->tx.len >> 8) | N_PCI_SF;
 		*(aepci + ae + 1) = (u8)so->tx.len & 0xFFU;
-		aepcilen = SF_PCI_SZ8 + ae;
+		aepcilen = SF_PCI_SZ11 + ae;
+
+		/* set XL SF flag for XL encapsulation if not FD PDU */
+		if (xl_encap(so) && !fd_pdu(so))
+			*(aepci + ae) |= N_PCI_XL_SF;
 	}
 
 	return aepcilen;
@@ -485,7 +520,11 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	reqlen = min_t(int, size, space);
 	datalen = reqlen + aepcilen;
 
-	skblen = isotp_tx_skb_len(so, datalen);
+	/* increase skb->len for CAN CC/FD padding */
+	if (reqlen < space && isotp_req_pad(so, datalen))
+		skblen = isotp_tx_skb_len(so, padlen(datalen));
+	else
+		skblen = isotp_tx_skb_len(so, datalen);
 
 	dev = dev_get_by_index(sock_net(sk), so->ifindex);
 	if (!dev) {

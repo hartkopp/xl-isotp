@@ -67,6 +67,8 @@
 
 #define CAN_ISOTP_LL_OPTS	5	/* pass struct can_isotp_ll_options */
 
+#define CAN_ISOTP_XL_OPTS	6	/* pass struct can_isotp_xl_options */
+
 struct can_isotp_options {
 
 	__u32 flags;		/* set flags for isotp behaviour.	*/
@@ -121,6 +123,41 @@ struct can_isotp_ll_options {
 				/* Obsolete when the BRS flag is fixed	*/
 				/* by the CAN netdriver configuration	*/
 };
+
+struct can_isotp_xl_options {
+
+	__u32	tx_dl;		/* tx link layer data length in bytes	*/
+				/* (configured maximum payload length)	*/
+				/* CAN XL tx_dl range : 8 .. 2048	*/
+				/* => rx path supports all LL_DL values */
+
+	canid_t	tx_addr;	/* tx address for ISO 15765-2 channel	*/
+				/* => for XL acceptance field (AF)	*/
+
+	canid_t	rx_addr;	/* rx address for ISO 15765-2 channel	*/
+				/* => check of XL acceptance field (AF)	*/
+
+	__u8	tx_flags;	/* set into struct canxl_frame.flags	*/
+				/* at frame creation: e.g. CANXL_SEC	*/
+				/* (setting CANXL_XLF is mandatory)	*/
+
+	__u8	rx_flags;	/* checked in struct canxl_frame.flags	*/
+				/* at frame reception time		*/
+				/* (setting CANXL_XLF is mandatory)	*/
+
+	__u8	tx_vcid;	/* VCID value set into CAN XL frame at	*/
+				/* frame creation time (outgoing)	*/
+
+	__u8	rx_vcid;	/* checked for equality in CAN XL frame	*/
+				/* at reception time (incoming)		*/
+
+	__u8	sdt_mode;	/* CAN CiA 611-1 SDT select (06/07/09)	*/
+};
+
+/* CAN CiA 611-1 Service Data Unit Types for ISO 15765-2 or CC/FD tunneling */
+#define CAN_CIA_CC_TUNNEL_SDT	0x06	/* tunneling of CC frames in XL */
+#define CAN_CIA_FD_TUNNEL_SDT	0x07	/* tunneling of FD frames in XL */
+#define CAN_CIA_ISO15765_2_SDT	0x09	/* native ISO 15765-2 N_PDU SDT */
 
 /* flags for isotp behaviour */
 
