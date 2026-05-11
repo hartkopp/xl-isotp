@@ -277,14 +277,19 @@ static int isotp_ff_pci(struct isotp_sock *so, u8 *aepci)
 {
 	int ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
 	int ff_pci_sz;
+	u8 n_pci_ff = N_PCI_FF;
 
 	if (ae)
 		*(aepci) = so->opt.ext_address;
 
+	/* alternative N_PCItype for multicast first frame */
+	if (so->opt.flags & CAN_ISOTP_MF_BROADCAST)
+		n_pci_ff = N_PCI_MF;
+
 	/* create N_PCI bytes with 12/32 bit FF_DL data length */
 	if (so->tx.len > MAX_12BIT_PDU_SIZE) {
 		/* use 32 bit FF_DL notation */
-		*(aepci + ae) = N_PCI_FF;
+		*(aepci + ae) = n_pci_ff;
 		*(aepci + ae + 1) = 0;
 		*(aepci + ae + 2) = (u8)(so->tx.len >> 24) & 0xFFU;
 		*(aepci + ae + 3) = (u8)(so->tx.len >> 16) & 0xFFU;
@@ -293,7 +298,7 @@ static int isotp_ff_pci(struct isotp_sock *so, u8 *aepci)
 		ff_pci_sz = FF_PCI_SZ32;
 	} else {
 		/* use 12 bit FF_DL notation */
-		*(aepci + ae) = (u8)(so->tx.len >> 8) | N_PCI_FF;
+		*(aepci + ae) = (u8)(so->tx.len >> 8) | n_pci_ff;
 		*(aepci + ae + 1) = (u8)so->tx.len & 0xFFU;
 		ff_pci_sz = FF_PCI_SZ12;
 	}
@@ -591,7 +596,8 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 
 		so->tx.idx += so->tx.ll_dl - aepcilen;
 
-		if (isotp_bc_flags(so) == CAN_ISOTP_CF_BROADCAST) {
+		if (isotp_bc_flags(so) &
+		    (CAN_ISOTP_CF_BROADCAST | CAN_ISOTP_MF_BROADCAST)) {
 			/* set timer for FC-less operation (STmin = 0) */
 			if (so->opt.flags & CAN_ISOTP_FORCE_TXSTMIN)
 				so->tx_gap = ktime_set(0, so->force_tx_stmin);
