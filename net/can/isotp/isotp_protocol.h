@@ -94,4 +94,10 @@ static bool fd_pdu(struct isotp_sock *so)
 	return (so->ll.mtu == CANFD_MTU);
 }
 
+/* CAN XL frame encapsulation enabled (for CC/FD/XL N_PDUs) */
+static bool xl_encap(struct isotp_sock *so)
+{
+	return (so->xl.tx_flags & CANXL_XLF);
+}
+
 #endif /* _ISOTP_PROTOCOL_H_ */
