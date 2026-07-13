@@ -180,7 +180,7 @@ struct isotp_sock {
 	struct tpcon rx, tx;
 	struct list_head notifier;
 	wait_queue_head_t wait;
-	spinlock_t rx_lock; /* protect single thread state machine */
+	spinlock_t sm_lock; /* protect single thread state machine */
 };
 
 static LIST_HEAD(isotp_notifier_list);
@@ -767,7 +767,7 @@ static void isotp_rcv(struct sk_buff *skb, void *data)
 	 * CAN frame reception time. This locking is not needed in real world
 	 * use cases but the inconsistency can be triggered with syzkaller.
 	 */
-	spin_lock(&so->rx_lock);
+	spin_lock(&so->sm_lock);
 
 	if (so->opt.flags & CAN_ISOTP_HALF_DUPLEX) {
 		/* check rx/tx path half duplex expectations */
@@ -826,7 +826,7 @@ static void isotp_rcv(struct sk_buff *skb, void *data)
 	}
 
 out_unlock:
-	spin_unlock(&so->rx_lock);
+	spin_unlock(&so->sm_lock);
 }
 
 static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
@@ -974,10 +974,10 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
 	if (skb->sk != sk)
 		return;
 
-	/* unlike isotp_rcv_fc()/isotp_rcv_cf(), not already under so->rx_lock
+	/* unlike isotp_rcv_fc()/isotp_rcv_cf(), not already under so->sm_lock
 	 * (no isotp_rcv() caller here), so take it ourselves
 	 */
-	spin_lock(&so->rx_lock);
+	spin_lock(&so->sm_lock);
 
 	/* so->cfecho may since belong to a new transfer; recheck under lock */
 	if (READ_ONCE(so->cfecho) != skb->hash)
@@ -989,7 +989,7 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
 	/* local echo skb with consecutive frame has been consumed */
 	WRITE_ONCE(so->cfecho, 0);
 
-	/* claiming a transfer also takes so->rx_lock, so a plain recheck
+	/* claiming a transfer also takes so->sm_lock, so a plain recheck
 	 * is enough: so->tx.state can't have flipped to ISOTP_SENDING for
 	 * a new claim while we're still in here
 	 */
@@ -1027,13 +1027,13 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
 	hrtimer_start(&so->txfrtimer, so->tx_gap, HRTIMER_MODE_REL_SOFT);
 
 out_unlock:
-	spin_unlock(&so->rx_lock);
+	spin_unlock(&so->sm_lock);
 }
 
 /* isotp_tx_timeout: we did not get any flow control or echo frame in time
  *
  * Shared by so->txtimer's and so->echotimer's callbacks. Both timers get
- * cancelled under so->rx_lock elsewhere, so this must stay lock-free.
+ * cancelled under so->sm_lock elsewhere, so this must stay lock-free.
  *
  * tx.state is acquired before tx_gen. Common sequence in isotp_tx_gen_done().
  * cmpxchg() only orders itself, not the two preceding loads.
@@ -1122,15 +1122,15 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	if (!so->bound || READ_ONCE(so->tx.state) == ISOTP_SHUTDOWN)
 		return -EADDRNOTAVAIL;
 
-	/* claim the socket under so->rx_lock: this serializes the claim
+	/* claim the socket under so->sm_lock: this serializes the claim
 	 * with the RX path and with sendmsg()'s own error paths below, so
 	 * none of them can ever see a transfer mid-claim
 	 */
 	for (;;) {
-		spin_lock_bh(&so->rx_lock);
+		spin_lock_bh(&so->sm_lock);
 		if (READ_ONCE(so->tx.state) == ISOTP_IDLE)
 			break;
-		spin_unlock_bh(&so->rx_lock);
+		spin_unlock_bh(&so->sm_lock);
 
 		/* we do not support multiple buffers - for now */
 		if (msg->msg_flags & MSG_DONTWAIT)
@@ -1159,7 +1159,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	smp_wmb(); /* see smp_load_acquire() in isotp_tx_[timeout|gen_done] */
 	WRITE_ONCE(so->tx.state, ISOTP_SENDING);
 	WRITE_ONCE(so->cfecho, 0);
-	spin_unlock_bh(&so->rx_lock);
+	spin_unlock_bh(&so->sm_lock);
 
 	/* so->bound is only checked once above - a wakeup may have
 	 * unbound/rebound the socket meanwhile => recheck
@@ -1292,12 +1292,12 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		}
 	}
 
-	spin_lock_bh(&so->rx_lock);
+	spin_lock_bh(&so->sm_lock);
 	if (READ_ONCE(so->tx.state) == ISOTP_SHUTDOWN) {
 		/* isotp_release() has since taken over and already drained
 		 * our timers - don't send into a socket that's going away
 		 */
-		spin_unlock_bh(&so->rx_lock);
+		spin_unlock_bh(&so->sm_lock);
 		kfree_skb(skb);
 		dev_put(dev);
 		wake_up_interruptible(&so->wait);
@@ -1307,7 +1307,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	WRITE_ONCE(so->tx.state, new_state);
 	hrtimer_start(tx_hrt, ktime_set(hrtimer_sec, 0),
 		      HRTIMER_MODE_REL_SOFT);
-	spin_unlock_bh(&so->rx_lock);
+	spin_unlock_bh(&so->sm_lock);
 
 	/* send the first or only CAN frame */
 	cf->flags = so->ll.tx_flags;
@@ -1320,14 +1320,14 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		pr_notice_once("can-isotp: %s: can_send_ret %pe\n",
 			       __func__, ERR_PTR(err));
 
-		spin_lock_bh(&so->rx_lock);
+		spin_lock_bh(&so->sm_lock);
 
 		/* new transfer already claimed by a concurrent completion,
 		 * timeout or sendmsg() while we were stuck in can_send()?
 		 */
 		if (READ_ONCE(so->tx_gen) != my_gen) {
 			/* don't touch timers and state of the new transfer */
-			spin_unlock_bh(&so->rx_lock);
+			spin_unlock_bh(&so->sm_lock);
 			return err;
 		}
 
@@ -1370,16 +1370,16 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 
 err_out_drop:
 	/* claimed but nothing sent yet - no timer to cancel */
-	spin_lock_bh(&so->rx_lock);
+	spin_lock_bh(&so->sm_lock);
 	goto err_out_drop_locked;
 err_event_drop:
 	/* interrupted or shut down while waiting on our own transfer */
-	spin_lock_bh(&so->rx_lock);
+	spin_lock_bh(&so->sm_lock);
 
 	/* new transfer already started by concurrent sendmsg()? */
 	if (READ_ONCE(so->tx_gen) != my_gen) {
 		/* don't touch timers and states of the new transfer */
-		spin_unlock_bh(&so->rx_lock);
+		spin_unlock_bh(&so->sm_lock);
 		return err;
 	}
 
@@ -1387,13 +1387,13 @@ err_event_drop:
 	hrtimer_cancel(&so->txtimer);
 	hrtimer_cancel(&so->echotimer);
 err_out_drop_locked:
-	/* release the claim; so->rx_lock still held from above */
+	/* release the claim; so->sm_lock still held from above */
 	WRITE_ONCE(so->cfecho, 0);
 
 	/* only claim to IDLE if isotp_release() has not taken over */
 	if (READ_ONCE(so->tx.state) != ISOTP_SHUTDOWN)
 		WRITE_ONCE(so->tx.state, ISOTP_IDLE);
-	spin_unlock_bh(&so->rx_lock);
+	spin_unlock_bh(&so->sm_lock);
 	wake_up_interruptible(&so->wait);
 
 	return err;
@@ -1463,13 +1463,13 @@ static int isotp_release(struct socket *sock)
 					READ_ONCE(so->tx.state) == ISOTP_IDLE) == 0)
 		;
 
-	/* claim the socket under so->rx_lock like sendmsg() does, so its
+	/* claim the socket under so->sm_lock like sendmsg() does, so its
 	 * claim can't race the forced ISOTP_SHUTDOWN below; force it
 	 * unconditionally, even when a signal cut the wait above short
 	 */
-	spin_lock_bh(&so->rx_lock);
+	spin_lock_bh(&so->sm_lock);
 	WRITE_ONCE(so->tx.state, ISOTP_SHUTDOWN);
-	spin_unlock_bh(&so->rx_lock);
+	spin_unlock_bh(&so->sm_lock);
 	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
 
 	/* forced SHUTDOWN may have skipped IDLE (gave up on a signal) */
@@ -1969,7 +1969,7 @@ static int isotp_init(struct sock *sk)
 		      CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
 
 	init_waitqueue_head(&so->wait);
-	spin_lock_init(&so->rx_lock);
+	spin_lock_init(&so->sm_lock);
 
 	spin_lock(&isotp_notifier_lock);
 	list_add_tail(&so->notifier, &isotp_notifier_list);
