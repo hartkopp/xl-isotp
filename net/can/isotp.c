@@ -188,25 +188,25 @@ static DEFINE_SPINLOCK(isotp_notifier_lock);
 static struct isotp_sock *isotp_busy_notifier;
 
 /* increase (24 bit) tx generation value */
-static inline u32 isotp_inc_tx_gen(u32 gen)
+static u32 isotp_inc_tx_gen(u32 gen)
 {
 	return (gen + 1) & ISOTP_TX_RESULT_GEN_MASK;
 }
 
 /* store 8 bit error and 24 bit tx generation values in packed u32 element */
-static inline u32 isotp_pack_tx_result(u32 gen, int err)
+static u32 isotp_pack_tx_result(u32 gen, int err)
 {
 	return gen | ((u32)err << ISOTP_TX_RESULT_GEN_BITS);
 }
 
 /* get the 24 bit tx generation value from the tx result */
-static inline u32 isotp_get_tx_gen(u32 gen_err)
+static u32 isotp_get_tx_gen(u32 gen_err)
 {
 	return gen_err & ISOTP_TX_RESULT_GEN_MASK;
 }
 
 /* get the 8 bit error value from the tx result */
-static inline u32 isotp_get_tx_err(u32 gen_err)
+static u32 isotp_get_tx_err(u32 gen_err)
 {
 	return (gen_err >> ISOTP_TX_RESULT_GEN_BITS) & ISOTP_TX_RESULT_ERR_MASK;
 }
@@ -231,6 +231,19 @@ static int isotp_get_tx_result(struct isotp_sock *so, u32 gen)
 	}
 
 	return -(isotp_get_tx_err(result));
+}
+
+/* true if done, shut down or superseded ('gen' is no longer the active
+ * transfer). Reads tx.state first (acquire) so tx_gen/tx_result reads
+ * below see at least what that state write published (common sequence).
+ */
+static bool isotp_tx_gen_done(struct isotp_sock *so, u32 gen)
+{
+	/* read tx.state first for the common sequence */
+	u32 state = smp_load_acquire(&so->tx.state);
+
+	return state == ISOTP_IDLE || state == ISOTP_SHUTDOWN ||
+	       READ_ONCE(so->tx_gen) != gen;
 }
 
 static inline struct isotp_sock *isotp_sk(const struct sock *sk)
@@ -1022,15 +1035,15 @@ out_unlock:
  * Shared by so->txtimer's and so->echotimer's callbacks. Both timers get
  * cancelled under so->rx_lock elsewhere, so this must stay lock-free.
  *
- * so->tx_gen is incremented before so->tx.state in isotp_sendmsg(), paired
- * with smp_wmb() - cmpxchg()'s full ordering makes sure 'gen' below is
- * always the generation that old_state/the cmpxchg() actually claimed.
+ * tx.state is acquired before tx_gen. Common sequence in isotp_tx_gen_done().
+ * cmpxchg() only orders itself, not the two preceding loads.
  */
 static enum hrtimer_restart isotp_tx_timeout(struct isotp_sock *so)
 {
 	struct sock *sk = &so->sk;
+	/* read tx.state first for the common sequence */
+	u32 old_state = smp_load_acquire(&so->tx.state);
 	u32 gen = READ_ONCE(so->tx_gen);
-	u32 old_state = READ_ONCE(so->tx.state);
 
 	/* don't handle timeouts in IDLE or SHUTDOWN state */
 	if (old_state == ISOTP_IDLE || old_state == ISOTP_SHUTDOWN)
@@ -1143,7 +1156,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	my_gen = isotp_inc_tx_gen(READ_ONCE(so->tx_gen));
 	isotp_set_tx_result(so, my_gen, ECOMM); /* prevent stale slot matching */
 	WRITE_ONCE(so->tx_gen, my_gen);
-	smp_wmb(); /* pairs with the cmpxchg() in isotp_tx_timeout() */
+	smp_wmb(); /* see smp_load_acquire() in isotp_tx_[timeout|gen_done] */
 	WRITE_ONCE(so->tx.state, ISOTP_SENDING);
 	WRITE_ONCE(so->cfecho, 0);
 	spin_unlock_bh(&so->rx_lock);
@@ -1328,31 +1341,28 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		 * - concurrent sendmsg() claiming a new transfer
 		 * - complete transmission of current PDU
 		 * - shutdown state change in isotp_release()
-		 * A tx_gen mismatch short-circuits past the acquire below, but
-		 * isotp_get_tx_result() tag-checks every read, so a stale one
-		 * is always safely rejected, never mistaken for another result.
+		 * isotp_tx_gen_done() uses common tx.state/tx_gen read sequence
 		 */
 		err = wait_event_interruptible(so->wait,
-					       READ_ONCE(so->tx_gen) != my_gen ||
-					       /* read pairs with the tx_result writers, SMP-safe */
-					       smp_load_acquire(&so->tx.state) == ISOTP_IDLE ||
-					       READ_ONCE(so->tx.state) == ISOTP_SHUTDOWN);
+					       isotp_tx_gen_done(so, my_gen));
 		if (err)
 			goto err_event_drop;
 
 		/* still our claim, but isotp_release() force-shut it down */
-		if (READ_ONCE(so->tx_gen) == my_gen &&
-		    READ_ONCE(so->tx.state) == ISOTP_SHUTDOWN) {
+		if (smp_load_acquire(&so->tx.state) == ISOTP_SHUTDOWN &&
+		    READ_ONCE(so->tx_gen) == my_gen) {
 			err = -EADDRNOTAVAIL;
 			goto err_event_drop;
 		}
 
-		/* either our own claim completed normally, or so->tx_gen has
-		 * since moved on to a new transfer - either way, our result
-		 * is whatever isotp_get_tx_result() finds recorded for
-		 * my_gen's so->tx_result[] slot
+		/* own completion, or tx_gen moved on - either way this is
+		 * what isotp_get_tx_result() recorded for my_gen
 		 */
 		err = isotp_get_tx_result(so, my_gen);
+
+		/* drain to avoid stale error for a later poll()/SO_ERROR */
+		sock_error(sk);
+
 		return err ? err : size;
 	}
 
@@ -2040,13 +2050,18 @@ static __init int isotp_module_init(void)
 
 	pr_info("can: isotp protocol (max_pdu_size %d)\n", max_pdu_size);
 
-	err = can_proto_register(&isotp_can_proto);
-	if (err < 0)
-		pr_err("can: registration of isotp protocol failed %pe\n", ERR_PTR(err));
-	else
-		register_netdevice_notifier(&canisotp_notifier);
+	err = register_netdevice_notifier(&canisotp_notifier);
+	if (err)
+		return err;
 
-	return err;
+	err = can_proto_register(&isotp_can_proto);
+	if (err < 0) {
+		pr_err("can: registration of isotp protocol failed %pe\n", ERR_PTR(err));
+		unregister_netdevice_notifier(&canisotp_notifier);
+		return err;
+	}
+
+	return 0;
 }
 
 static __exit void isotp_module_exit(void)
