@@ -246,7 +246,7 @@ static bool isotp_tx_gen_done(struct isotp_sock *so, u32 gen)
 	       READ_ONCE(so->tx_gen) != gen;
 }
 
-static inline struct isotp_sock *isotp_sk(const struct sock *sk)
+static struct isotp_sock *isotp_sk(const struct sock *sk)
 {
 	return (struct isotp_sock *)sk;
 }
