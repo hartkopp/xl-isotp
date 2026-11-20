@@ -226,7 +226,8 @@ Patches 1 bis 23:
   Umsortieren in Patch 13 aufgehen.
 - **Patch 34**: Ein Socket im Listen-Mode sendete FC.OVFLW, wenn FF_DL
   den Empfangspuffer übersteigt, und konnte so fremde Übertragungen
-  abbrechen (Test RX-FF-006).
+  abbrechen (Test RX-FF-006). Die Listen-Mode-Prüfung steht jetzt am
+  Anfang von `isotp_send_fc()` statt bei den Aufrufern.
 - Gefunden mit can-tests `functest/isotp` (Branch `isotp_ft`). Die Fixes
   sollen später an den Anfang der net-next-Patches (stable).
 

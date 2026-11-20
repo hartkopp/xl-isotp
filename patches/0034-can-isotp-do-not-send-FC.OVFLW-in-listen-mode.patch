@@ -1,37 +1,64 @@
-From 50d956ca107950db978772136a8c263552dcdf05 Mon Sep 17 00:00:00 2001
+From 9f8de8bd23de254f0497d24c84aaae0ac39bbd98 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
-Date: Fri, 20 Nov 2026 21:03:06 +0000
+Date: Fri, 20 Nov 2026 21:10:39 +0000
 Subject: [PATCH 34/34] can: isotp: do not send FC.OVFLW in listen mode
 
 isotp_rcv_ff() sends a FC with overflow status when the FF_DL exceeds
-the receive buffer before checking CAN_ISOTP_LISTEN_MODE. So a listening
-socket sends a FC on the bus, which can abort the transfer between other
-nodes using the same CAN IDs.
+the receive buffer without checking CAN_ISOTP_LISTEN_MODE. So a
+listening socket sends a FC on the bus, which can abort the transfer
+between other nodes using the same CAN IDs.
 
-Ignore the FF in listen mode instead.
+Move the listen mode check from the callers into isotp_send_fc() before
+any state changes to cover all FC frames.
 
 Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---
- net/can/isotp/protocolrx.c | 5 +++--
- 1 file changed, 3 insertions(+), 2 deletions(-)
+ net/can/isotp/protocolrx.c | 8 --------
+ net/can/isotp/protocoltx.c | 4 ++++
+ 2 files changed, 4 insertions(+), 8 deletions(-)
 
 diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
-index 11a01d8..07a9849 100644
+index 11a01d8..2da3c69 100644
 --- a/net/can/isotp/protocolrx.c
 +++ b/net/can/isotp/protocolrx.c
-@@ -327,8 +327,9 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
- 	}
+@@ -345,10 +345,6 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+ 	hrtimer_start(&so->rxtimer, ktime_set(ISOTP_FC_TIMEOUT, 0),
+ 		      HRTIMER_MODE_REL_SOFT);
  
- 	if (so->rx.len > so->rx.buflen) {
--		/* send FC frame with overflow status */
--		isotp_send_fc(sk, ae, ISOTP_FC_OVFLW);
-+		/* send FC frame with overflow status (not in listen mode) */
-+		if (!(so->opt.flags & CAN_ISOTP_LISTEN_MODE))
-+			isotp_send_fc(sk, ae, ISOTP_FC_OVFLW);
+-	/* no creation of flow control frames */
+-	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
+-		return;
+-
+ 	/* send our first FC frame */
+ 	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
+ }
+@@ -448,10 +444,6 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
+ 	if (!so->rxfc.bs || ++so->rx.bs < so->rxfc.bs)
  		return;
- 	}
  
+-	/* no creation of flow control frames */
+-	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
+-		return;
+-
+ 	/* we reached the specified blocksize so->rxfc.bs */
+ 	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
+ }
+diff --git a/net/can/isotp/protocoltx.c b/net/can/isotp/protocoltx.c
+index 1452ce9..4f0edc5 100644
+--- a/net/can/isotp/protocoltx.c
++++ b/net/can/isotp/protocoltx.c
+@@ -176,6 +176,10 @@ void isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
+ 	u8 *data;
+ 	int can_send_ret;
+ 
++	/* no creation of flow control frames in listen mode */
++	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
++		return;
++
+ 	/* increase skb->len for CAN FC padding */
+ 	if (so->opt.flags & CAN_ISOTP_TX_PADDING)
+ 		skblen = isotp_tx_skb_len(so, CAN_ISOTP_MIN_TX_DL);
 -- 
 2.43.0
 
