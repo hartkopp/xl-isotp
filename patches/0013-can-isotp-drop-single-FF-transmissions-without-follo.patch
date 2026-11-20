@@ -1,0 +1,51 @@
+From 4257ca2c4e9b931478e5f4b7e488d5d772618442 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Mon, 29 Dec 2025 19:11:22 +0100
+Subject: [PATCH 13/23] can: isotp: drop single FF transmissions without
+ following CFs
+
+When a SF PDU does not provide enough space the segmentation with FF/CF is
+used. The decision is made on the transmission side for all TX_DL values.
+
+On the receiver side we can only check if the sent PDU length requires a
+following CF PDU after the initial FF PDU - which is needed in ISO 15765-2.
+
+This patch removes an offset calculation for TX_DL > 8 which is only
+required for the transmission(!) side and which was accidentally introduced
+on the receiver side on 2013-09-27 11:41:04 in commit b0fe267c
+("isotp: update FF_DL length check for SF_DL escape handling")
+https://github.com/hartkopp/can-isotp-modules/commit/b0fe267c
+
+This (wrong) offset calculation never caused a real world problem but the
+inconsistency showed up in a review for the CAN XL feature implementation.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 9645bb8..5444702 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -574,7 +574,6 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ {
+ 	struct isotp_sock *so = isotp_sk(sk);
+ 	int i;
+-	int off;
+ 	int ff_pci_sz;
+ 
+ 	hrtimer_cancel(&so->rxtimer);
+@@ -607,10 +606,8 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 			return 1;
+ 	}
+ 
+-	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
+-	off = (so->rx.ll_dl > CAN_MAX_DLEN) ? 1 : 0;
+-
+-	if (so->rx.len + ae + off + ff_pci_sz < so->rx.ll_dl)
++	/* single FF's are not allowed. rx.len has to require a CF */
++	if (so->rx.len + ae + ff_pci_sz <= so->rx.ll_dl)
+ 		return 1;
+ 
+ 	/* PDU size > default => try max_pdu_size

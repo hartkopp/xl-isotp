@@ -1,0 +1,100 @@
+From 0e21f73fad2fd6540419cfeea0bbf81e1d6d44d8 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Tue, 16 Dec 2025 18:52:37 +0100
+Subject: [PATCH 18/23] can: isotp: rename checkpad functions returning bool
+ values
+
+The checkpad functions return true when failing. Rename the functions
+to reflect their functionality together with a conversion to bool
+return values.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 27 ++++++++++++++-------------
+ 1 file changed, 14 insertions(+), 13 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index b87a58d..e6dd0b6 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -389,8 +389,8 @@ static u8 padlen(u8 datalen)
+ 	return plen[datalen];
+ }
+ 
+-/* check for length optimization and return 1/true when the check fails */
+-static int check_optimized(struct canfd_frame *cf, int start_index)
++/* check for length optimization and return true when the check fails */
++static bool chk_optimized_fail(struct canfd_frame *cf, int start_index)
+ {
+ 	/* for CAN_DL <= 8 the start_index is equal to the CAN_DL as the
+ 	 * padding would start at this point. E.g. if the padding would
+@@ -409,33 +409,34 @@ static int check_optimized(struct canfd_frame *cf, int start_index)
+ 	return (cf->len != padlen(start_index));
+ }
+ 
+-/* check padding and return 1/true when the check fails */
+-static int check_pad(struct isotp_sock *so, struct canfd_frame *cf,
+-		     int start_index, u8 content)
++/* check padding and return true when the check fails */
++static bool chk_pad_fail(struct isotp_sock *so, struct canfd_frame *cf,
++			 int start_index, u8 content)
+ {
+ 	int i;
+ 
+ 	/* no RX_PADDING value => check length of optimized frame length */
+ 	if (!(so->opt.flags & CAN_ISOTP_RX_PADDING)) {
+ 		if (so->opt.flags & CAN_ISOTP_CHK_PAD_LEN)
+-			return check_optimized(cf, start_index);
++			return chk_optimized_fail(cf, start_index);
+ 
+ 		/* no valid test against empty value => ignore frame */
+-		return 1;
++		return true;
+ 	}
+ 
+ 	/* check datalength of correctly padded CAN frame */
+ 	if ((so->opt.flags & CAN_ISOTP_CHK_PAD_LEN) &&
+ 	    cf->len != padlen(cf->len))
+-		return 1;
++		return true;
+ 
+ 	/* check padding content */
+ 	if (so->opt.flags & CAN_ISOTP_CHK_PAD_DATA) {
+ 		for (i = start_index; i < cf->len; i++)
+ 			if (cf->data[i] != content)
+-				return 1;
++				return true;
+ 	}
+-	return 0;
++
++	return false;
+ }
+ 
+ static void isotp_send_cframe(struct isotp_sock *so);
+@@ -460,7 +461,7 @@ static int isotp_rcv_fc(struct isotp_sock *so, struct canfd_frame *cf, int ae)
+ 
+ 	if ((cf->len < ae + FC_CONTENT_SZ) ||
+ 	    ((so->opt.flags & ISOTP_CHECK_PADDING) &&
+-	     check_pad(so, cf, ae + FC_CONTENT_SZ, so->opt.rxpad_content))) {
++	     chk_pad_fail(so, cf, ae + FC_CONTENT_SZ, so->opt.rxpad_content))) {
+ 		/* malformed PDU - report 'not a data message' */
+ 		sk->sk_err = EBADMSG;
+ 		if (!sock_flag(sk, SOCK_DEAD))
+@@ -550,7 +551,7 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
+ 		return 1;
+ 
+ 	if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
+-	    check_pad(so, cf, pcilen + len, so->opt.rxpad_content)) {
++	    chk_pad_fail(so, cf, pcilen + len, so->opt.rxpad_content)) {
+ 		/* malformed PDU - report 'not a data message' */
+ 		sk->sk_err = EBADMSG;
+ 		if (!sock_flag(sk, SOCK_DEAD))
+@@ -716,7 +717,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+ 		WRITE_ONCE(so->rx.state, ISOTP_IDLE);
+ 
+ 		if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
+-		    check_pad(so, cf, i + 1, so->opt.rxpad_content)) {
++		    chk_pad_fail(so, cf, i + 1, so->opt.rxpad_content)) {
+ 			/* malformed PDU - report 'not a data message' */
+ 			sk->sk_err = EBADMSG;
+ 			if (!sock_flag(sk, SOCK_DEAD))

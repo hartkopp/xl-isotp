@@ -1,0 +1,27 @@
+From a0f1f3516a7b4ec46fd838b42efc82eb9be9cdf9 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Wed, 18 Nov 2026 12:00:59 +0000
+Subject: [PATCH 14/23] can: isotp: drop inline keyword, let the compiler
+ decide
+
+Modern kernel style avoids forcing inlining via the inline keyword on
+static functions - the compiler heuristics decide better on their own.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 5444702..b4807ec 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -248,7 +248,7 @@ static bool isotp_tx_gen_done(struct isotp_sock *so, u32 gen)
+ 	       READ_ONCE(so->tx_gen) != gen;
+ }
+ 
+-static inline struct isotp_sock *isotp_sk(const struct sock *sk)
++static struct isotp_sock *isotp_sk(const struct sock *sk)
+ {
+ 	return (struct isotp_sock *)sk;
+ }

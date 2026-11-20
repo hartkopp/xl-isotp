@@ -1,4 +1,4 @@
-# RTNL-Stalls in CAN_RAW, CAN_ISOTP und CAN_BCM
+# CAN-Patches: RTNL-Stalls, net-next-Folgepatches und CAN_ISOTP
 
 Mainline-Patches, keine Stable-Backports. Sie wenden per `git am` auf den
 CAN-Code dieses Repositorys an (`main`, "Update to Linux 7.4-rc3+ CAN
@@ -79,6 +79,62 @@ Changelog-Notizen unter dem `---` sind übernommen. Der Patch wird erst
 verschickt, wenn die Fixes in net-next angekommen sind; Changelog und
 Links sind dann anzupassen.
 
+## Patches 12 bis 23: CAN_ISOTP für net-next (Vorbereitung für CAN XL)
+
+| # | Patch |
+|---|---|
+| 12 | can: isotp: drop FF frames with invalid length extension |
+| 13 | can: isotp: drop single FF transmissions without following CFs |
+| 14 | can: isotp: drop inline keyword, let the compiler decide |
+| 15 | can: isotp: rename rx_lock as is has become state machine lock |
+| 16 | can: isotp: introduce isotp_invalid_canid() to verify proper CAN-IDs |
+| 17 | can: isotp: rename variable for the required content length |
+| 18 | can: isotp: rename checkpad functions returning bool values |
+| 19 | can: isotp: change return type of functions to void |
+| 20 | can: isotp: rename pointer in isotp_rcv() prototype |
+| 21 | can: isotp: introduce CAN_ISOTP_MIN_TX_DL |
+| 22 | can: isotp: check the CAN_ISOTP_OPTS values before applying them |
+| 23 | can: isotp: add the frame transmission time to the protocol timeouts |
+
+- **Patch 12** verwirft First Frames mit unnötiger 32-Bit-Längenangabe
+  (FF_DL <= 4095), wie ISO 15765-2:2016 es verlangt.
+- **Patch 13** verwirft First Frames, deren Länge keinen Consecutive Frame
+  erfordert, und entfernt die nur auf der Sendeseite nötige
+  SF_DL-ESC-Offsetberechnung auf der Empfangsseite.
+- **Patch 14** entfernt das `inline` bei `isotp_sk()`.
+- **Patch 15** benennt `rx_lock` in `sm_lock` um, da der Spinlock die
+  ganze Zustandsmaschine schützt. Der Mutex `conf_lock` aus Patch 4 bleibt
+  unverändert.
+- **Patch 16 bis 21** sind Aufräum-Patches ohne funktionale Änderung:
+  gemeinsame CAN-ID-Prüfung in `isotp_bind()`, `num` heißt `reqlen`,
+  `chk_pad_fail()`/`chk_optimized_fail()` liefern `bool`, `void` statt
+  ungenutzter Rückgabewerte von `isotp_send_fc()` und `isotp_rcv_*()`,
+  `data` heißt `skdata` in `isotp_rcv()`, eigenes Define
+  `CAN_ISOTP_MIN_TX_DL` für TX_DL-Prüfungen statt `CAN_MAX_DLEN`.
+- **Patch 22** prüft die Werte von `CAN_ISOTP_OPTS` in der Kopie, die
+  `isotp_setsockopt()` vor `conf_lock` anlegt, bevor sie nach `so->opt`
+  kopiert werden. Mehr als ein Broadcast-Flag lehnt `hweight32()` mit
+  `-EINVAL` ab, und ein abgelehnter Aufruf lässt alle Optionen
+  unverändert. Bisher wurde bei SF|CF das CF-Flag verworfen, der Rest
+  übernommen und trotzdem `-EINVAL` gemeldet.
+- **Patch 23** addiert `frame_txtime` (N_As/N_Ar) auf den rx-Timeout nach
+  dem Senden eines Flow Control in `isotp_send_fc()` und auf den Echo-
+  bzw. FC-Timeout nach dem ersten Frame in `isotp_sendmsg()`, wie in
+  `isotp.h` dokumentiert. Werte über 100 ms lehnt er wie Patch 22 vor dem
+  Kopieren mit `-EINVAL` ab. Die Echo-Timeouts vor Consecutive Frames
+  bleiben ohne `frame_txtime`, da das Echo lokal ist. Anlass ist die
+  Diskussion zu Wentian Yes N_Ar-Patch (`Reported-by`, `Closes:` auf
+  `eb5e9618-3dbf-42cb-a635-752ff9fbcb99@hartkopp.net`).
+
+Die Patches setzen auf Patch 11 auf. Gegenüber ihren ursprünglichen
+Fassungen sind sie an den 7.4-Code und an die Patches 1 bis 11 angepasst:
+
+- Patch 12 und 13 stehen vor Patch 19; ihre neuen Abbrüche in
+  `isotp_rcv_ff()` liefern daher zunächst `return 1`.
+- In `isotp_rcv_cf()` prüft Patch 6 die CF-Länge als Erstes und startet
+  den Empfangs-Timeout schon vor der Blocksize-Prüfung. Patch 19 behält
+  beides bei und entfernt nur die Rückgabewerte.
+
 ## Basis
 
 Die Patches wenden auf `main` dieses Repositorys an (CAN-Code aus
@@ -89,9 +145,9 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 11 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 23 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
-- `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 11 fehler- und
+- `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 23 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
   `CONFIG_DEBUG_MUTEXES`, `CONFIG_PROC_FS` und `CONFIG_MEMCG`). Kein vollständiger
   Kernel-Build.
@@ -111,5 +167,6 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
+- Patch 12 bis 23 sind nur übersetzt, nicht zur Laufzeit getestet.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
-  den `Fixes:`-Zeilen.
+  den `Fixes:`-Zeilen bzw. Commit-Referenzen.

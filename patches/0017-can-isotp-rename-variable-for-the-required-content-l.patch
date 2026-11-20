@@ -1,0 +1,44 @@
+From 7119d827172de12054b886df8f05e09d2d69ed30 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Tue, 16 Dec 2025 18:47:54 +0100
+Subject: [PATCH 17/23] can: isotp: rename variable for the required content
+ length
+
+Rename the meaningless 'num' variable to 'reqlen' to simplify the review
+for the CAN XL integration.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 21eba7a..b87a58d 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -855,13 +855,13 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
+ {
+ 	int pcilen = N_PCI_SZ + ae + off;
+ 	int space = so->tx.ll_dl - pcilen;
+-	int num = min_t(int, so->tx.len - so->tx.idx, space);
++	int reqlen = min_t(int, so->tx.len - so->tx.idx, space);
+ 	int i;
+ 
+ 	cf->can_id = so->txid;
+-	cf->len = num + pcilen;
++	cf->len = reqlen + pcilen;
+ 
+-	if (num < space) {
++	if (reqlen < space) {
+ 		if (so->opt.flags & CAN_ISOTP_TX_PADDING) {
+ 			/* user requested padding */
+ 			cf->len = padlen(cf->len);
+@@ -874,7 +874,7 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
+ 		}
+ 	}
+ 
+-	for (i = 0; i < num; i++)
++	for (i = 0; i < reqlen; i++)
+ 		cf->data[pcilen + i] = so->tx.buf[so->tx.idx++];
+ 
+ 	if (ae)
