@@ -1,4 +1,4 @@
-# CAN-Patches: RTNL-Stalls, net-next-Folgepatches und CAN_ISOTP
+# CAN-Patches: RTNL-Stalls, net-next-Folgepatches, CAN_ISOTP und CAN XL
 
 Mainline-Patches, keine Stable-Backports. Sie wenden per `git am` auf den
 CAN-Code dieses Repositorys an (`main`, "Update to Linux 7.4-rc3+ CAN
@@ -135,6 +135,74 @@ Fassungen sind sie an den 7.4-Code und an die Patches 1 bis 11 angepasst:
   den Empfangs-Timeout schon vor der Blocksize-Prüfung. Patch 19 behält
   beides bei und entfernt nur die Rückgabewerte.
 
+## Patches 24 bis 29: CAN_ISOTP-Aufteilung und CAN XL
+
+| # | Patch |
+|---|---|
+| 24 | can: isotp: move isotp.c into in separate directory |
+| 25 | can: isotp: move common definitions to separate header file |
+| 26 | can: isotp: split isotp code |
+| 27 | can: isotp: rework CAN frame structure access for CAN XL |
+| 28 | can: isotp: add CAN XL protocol extension support |
+| 29 | can: isotp: add official support for 1-to-n multicast mode |
+
+- **Patch 24** verschiebt `net/can/isotp.c` nach `net/can/isotp/isotp.c`
+  mit eigenem Makefile.
+- **Patch 25** verschiebt Defines, `enum` und Strukturen nach
+  `isotp_defines.h`.
+- **Patch 26** teilt den Code in `isotp.c` (Socket-API), `protocolrx.c`,
+  `protocoltx.c` und `hrtimer.c` mit `isotp_protocol.h` und
+  `isotp_hrtimer.h` auf.
+- **Patch 27** greift über Datenzeiger und Datenlänge statt über
+  `struct canfd_frame` auf die CAN-Frames zu und führt Hilfsfunktionen für
+  Frame-Header und PCI ein.
+- **Patch 28** ergänzt die Socket-Option `CAN_ISOTP_XL_OPTS`, die
+  CAN-XL-Frame-Header, die SF-Längenkodierung für CAN XL und die Kapselung
+  der CiA SDTs 6/7/9.
+- **Patch 29** führt den N_PCI-Typ Multicast First Frame (MF) mit
+  `CAN_ISOTP_MF_BROADCAST` ein.
+
+Die Patches setzen auf Patch 23 auf. Anpassungen an den 7.4-Code und die
+Patches 1 bis 23:
+
+- Patch 26 übernimmt die Funktionen unverändert aus dem aktuellen
+  `isotp.c`, also mit `conf_lock` (Patch 4), der CF-Längenprüfung und dem
+  Empfangs-Timeout aus Patch 6, dem späten Lesen von `ae` und
+  `wait_tx_done` in `isotp_sendmsg()` (Patch 7), der memcg-Abrechnung
+  (Patch 11), der Prüfung von `CAN_ISOTP_OPTS` vor dem Kopieren
+  (Patch 22), `frame_txtime` in den Timeouts (Patch 23) und den
+  7.4-Änderungen (`can_skb_uid` als Echo-Kennung,
+  `READ_ONCE(so->bound)`, Prüfung des CC/FD-Frame-Inhalts in
+  `isotp_rcv()`). `conf_lock` liegt seit Patch 25 mit in
+  `struct isotp_sock` in `isotp_defines.h`.
+- Ab Patch 27 steht die Prüfung des CC/FD-Frame-Inhalts
+  (`can_is_can_skb()` bzw. `can_is_canfd_skb()`) in
+  `isotp_check_frame_head()`; CAN-XL-Frames prüft dort
+  `can_is_canxl_skb()`. Patch 27 und 28 lesen in `isotp_sendmsg()` keine
+  Socket-Optionen vor der Belegung der Übertragung.
+- `CAN_ISOTP_XL_OPTS` (Patch 28) folgt dem Schema der 7.4-Socket-Optionen:
+  `isotp_setsockopt()` kopiert den Wert vor `conf_lock` mit
+  Längenprüfung, `isotp_setsockopt_locked()` prüft ihn über einen Zeiger,
+  und `isotp_getsockopt()` liest ihn unter `conf_lock` in eine lokale
+  Kopie (Patch 10).
+- Hilfsfunktionen stehen in der `.c`-Datei, die sie nutzt. Die
+  tx_result/tx_gen-Funktionen (`isotp_inc_tx_gen()`,
+  `isotp_pack_tx_result()`, `isotp_get_tx_gen()`, `isotp_get_tx_err()`,
+  `isotp_get_tx_result()`, `isotp_tx_gen_done()`) sind `static` in
+  `protocoltx.c`. `isotp_set_tx_result()`, das auch `protocolrx.c` und
+  `hrtimer.c` aufrufen, ist dort eine normale Funktion mit Prototyp in
+  `isotp_protocol.h`.
+- In `isotp_protocol.h` bleiben nur die Einzeiler `isotp_sk()`,
+  `isotp_bc_flags()`, `fd_pdu()` (Patch 27) und `xl_encap()` (Patch 28),
+  die mehrere `.c`-Dateien nutzen. Sie sind `static inline`, da eine
+  `static`-Funktion im Header in jeder `.c`-Datei, die sie nicht nutzt,
+  `-Wunused-function` auslöst (mit `CONFIG_WERROR` ein Build-Fehler). In
+  `.c`-Dateien gibt es kein `inline`.
+- Patch 29 ergänzt `CAN_ISOTP_MF_BROADCAST` nur in `ISOTP_ALL_BC_FLAGS`;
+  die Prüfung auf ein einziges Broadcast-Flag aus Patch 22 deckt damit
+  alle drei Flags ab. Der ursprüngliche Zählblock mit `bcfl_num` in
+  `isotp_setsockopt_locked()` entfällt.
+
 ## Basis
 
 Die Patches wenden auf `main` dieses Repositorys an (CAN-Code aus
@@ -145,9 +213,9 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 23 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 29 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
-- `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 23 fehler- und
+- `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 29 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
   `CONFIG_DEBUG_MUTEXES`, `CONFIG_PROC_FS` und `CONFIG_MEMCG`). Kein vollständiger
   Kernel-Build.
@@ -167,6 +235,8 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Patch 12 bis 23 sind nur übersetzt, nicht zur Laufzeit getestet.
+- Patch 12 bis 29 sind nur übersetzt, nicht zur Laufzeit getestet.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
-  den `Fixes:`-Zeilen bzw. Commit-Referenzen.
+  den `Fixes:`-Zeilen bzw. Commit-Referenzen, den MAINTAINERS-Hinweisen
+  bei den Dateiverschiebungen in Patch 24 bis 26 und (mit `--strict`)
+  einer Leerzeile nach `{` in `struct can_isotp_xl_options` in Patch 28.
