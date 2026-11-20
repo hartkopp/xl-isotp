@@ -203,13 +203,14 @@ Patches 1 bis 23:
   alle drei Flags ab. Der ursprüngliche Zählblock mit `bcfl_num` in
   `isotp_setsockopt_locked()` entfällt.
 
-## Patches 30 bis 32: Fixes für den Empfangspfad (vorläufig hinter 29)
+## Patches 30 bis 33: Fixes für den Empfangspfad (vorläufig hinter 29)
 
 | # | Patch | Fixes |
 |---|---|---|
 | 30 | can: isotp: fix FF_DL wrap around in the single FF check | `e057dd3fc20f` |
 | 31 | can: isotp: drop frames without N_PCI | `e057dd3fc20f` |
 | 32 | can: isotp: check the data length of the last CF | `e057dd3fc20f` |
+| 33 | can: isotp: check the minimum FF_DL | - |
 
 - **Patch 30**: FF_DL nahe 2^32 lief in der Single-FF-Prüfung über, der
   FF wurde ohne FC.OVFLW verworfen (Test RX-FF-011/-ae).
@@ -218,6 +219,10 @@ Patches 1 bis 23:
   Unterlauf in `isotp_rcv_sf()` (Tests RX-SF-003..005, RX-CF-006).
 - **Patch 32**: Ein kurzer CF wurde als letzter CF akzeptiert, auch wenn
   ihm Bytes der PDU fehlten. Setzt Patch 31 voraus.
+- **Patch 33**: Bei LL_DL 8 wurde FF_DL 7 (6 mit Extended Addressing)
+  angenommen, obwohl die PDU in einen SF passt (ISO FF_DLmin, Test
+  RX-FF-004-CC8/-ae). Konformitätsfix ohne Fixes-Tag; soll beim
+  Umsortieren in Patch 13 aufgehen.
 - Gefunden mit can-tests `functest/isotp` (Branch `isotp_ft`). Die Fixes
   sollen später an den Anfang der net-next-Patches (stable).
 
@@ -231,9 +236,9 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 32 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 33 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
-- Patch 30 bis 32 sind nur angewendet, nicht übersetzt.
+- Patch 30 bis 33 sind nur angewendet, nicht übersetzt.
 - `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 29 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
   `CONFIG_DEBUG_MUTEXES`, `CONFIG_PROC_FS` und `CONFIG_MEMCG`). Kein vollständiger
