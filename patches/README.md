@@ -203,25 +203,23 @@ Patches 1 bis 23:
   alle drei Flags ab. Der ursprüngliche Zählblock mit `bcfl_num` in
   `isotp_setsockopt_locked()` entfällt.
 
-## Patch 30: FF_DL-Überlauf in der Single-FF-Prüfung (vorläufig hinter 29)
+## Patches 30 bis 32: Fixes für den Empfangspfad (vorläufig hinter 29)
 
 | # | Patch | Fixes |
 |---|---|---|
 | 30 | can: isotp: fix FF_DL wrap around in the single FF check | `e057dd3fc20f` |
+| 31 | can: isotp: drop frames without N_PCI | `e057dd3fc20f` |
+| 32 | can: isotp: check the data length of the last CF | `e057dd3fc20f` |
 
-- `isotp_rcv_ff()` rechnet `so->rx.len + ae + ff_pci_sz <= so->rx.ll_dl`
-  in u32. Für FF_DL nahe 2^32 läuft die Summe über (CAN CC: FF_DL
-  0xFFFFFFFA..0xFFFFFFFF, mit Extended Addressing ab 0xFFFFFFF9), der FF
-  wird als "single FF" verworfen und kein FC mit Overflow-Status
-  gesendet. Der Patch prüft `so->rx.len <= so->rx.ll_dl - ae -
-  ff_pci_sz`, ohne Überlauf mathematisch gleichwertig; die rechte Seite
-  kann nicht unterlaufen (`ll_dl` >= 8, `ae + ff_pci_sz` <= 7).
-- Gefunden mit den Testfällen RX-FF-011 und RX-FF-011-ae der
-  can-tests-Suite (`functest/isotp`, Branch `isotp_ft`).
-- Mainline hat denselben Überlauf (dort mit `off`). Der Patch setzt
-  vorläufig auf Patch 29 (`net/can/isotp/protocolrx.c`) auf, damit ein
-  Testkernel gebaut werden kann. Später soll der Fix an den Anfang der
-  net-next-Patches, damit er nach stable kann.
+- **Patch 30**: FF_DL nahe 2^32 lief in der Single-FF-Prüfung über, der
+  FF wurde ohne FC.OVFLW verworfen (Test RX-FF-011/-ae).
+- **Patch 31**: Frames mit CAN_DL < AE + N_PCI wurden mit Daten jenseits
+  von CAN_DL als SF/CF/FC verarbeitet; seit Patch 27 mit unsigned
+  Unterlauf in `isotp_rcv_sf()` (Tests RX-SF-003..005, RX-CF-006).
+- **Patch 32**: Ein kurzer CF wurde als letzter CF akzeptiert, auch wenn
+  ihm Bytes der PDU fehlten. Setzt Patch 31 voraus.
+- Gefunden mit can-tests `functest/isotp` (Branch `isotp_ft`). Die Fixes
+  sollen später an den Anfang der net-next-Patches (stable).
 
 ## Basis
 
@@ -233,9 +231,9 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 30 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 32 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
-- Patch 30 ist nur angewendet, nicht übersetzt.
+- Patch 30 bis 32 sind nur angewendet, nicht übersetzt.
 - `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 29 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
   `CONFIG_DEBUG_MUTEXES`, `CONFIG_PROC_FS` und `CONFIG_MEMCG`). Kein vollständiger

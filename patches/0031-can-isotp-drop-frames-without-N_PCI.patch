@@ -1,0 +1,36 @@
+From 1bcfd67c49d846bcf1571ded27569341afc4d13f Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 20:33:36 +0000
+Subject: [PATCH 31/32] can: isotp: drop frames without N_PCI
+
+isotp_rcv() reads the address extension and the N_PCI without checking
+the CAN frame data length. So frames with CAN_DL < ae + N_PCI_SZ are
+processed with stale data beyond CAN_DL, e.g. as SF, CF or FC.
+
+Drop these frames as they are no valid N_PDUs. This also ensures that
+datalen - pcilen in isotp_rcv_sf() can not underflow.
+
+Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp/protocolrx.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
+index 730d889..794f2b9 100644
+--- a/net/can/isotp/protocolrx.c
++++ b/net/can/isotp/protocolrx.c
+@@ -510,6 +510,10 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+ 	if (!data)
+ 		return;
+ 
++	/* frames without N_PCI (and AE) are no N_PDUs */
++	if (datalen < ae + N_PCI_SZ)
++		return;
++
+ 	/* if enabled: check reception of my configured extended address */
+ 	if (ae && *(data) != so->opt.rx_ext_address)
+ 		return;
+-- 
+2.43.0
+
