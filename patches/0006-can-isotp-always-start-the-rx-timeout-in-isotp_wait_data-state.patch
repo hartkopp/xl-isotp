@@ -1,0 +1,170 @@
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 12:22:19 +0100
+Subject: [PATCH v7 6/8] can: isotp: always start the rx timeout in
+ ISOTP_WAIT_DATA state
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Message-Id: <20261120-can-bcmlock-memcg-v7-6-bf826d3a6a34@hartkopp.net>
+References: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+In-Reply-To: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+To: linux-can@vger.kernel.org
+Cc: Marc Kleine-Budde <mkl@pengutronix.de>, 
+ Oleksij Rempel <o.rempel@pengutronix.de>, 
+ Vincent Mailhol <mailhol@kernel.org>, Zhu Ling <zhuling0805@qq.com>, 
+ Sashiko <sashiko-bot@kernel.org>, Oliver Hartkopp <socketcan@hartkopp.net>
+X-Mailer: b4 0.15.2
+X-Developer-Signature: v=1; a=ed25519-sha256; t=1795173733; l=5327;
+ i=socketcan@hartkopp.net; s=20260128; h=from:subject:message-id;
+ bh=9t/hXjwQ04Aj37vbadUyjP1bscL31TCcCP+d+c7tieo=;
+ b=WNPwvfaOHVAt3HGumyLC6Uv5X8ay8tkspVVjXW7ORdf5AjF4OqHMcwjLQ6sICFEWs6YuCE2zD
+ ySYqPEy5s5dCZIKsbYBPOze+yEKTZHstJlBfdSKC6BHPDcHJXmqoMHi
+X-Developer-Key: i=socketcan@hartkopp.net; a=ed25519;
+ pk=/gU/7/wBqak3kTsTeFbCCqUi9dnh+1i6ITEkfPj/BvU=
+
+The rx timeout is only started at the end of isotp_send_fc() and for
+consecutive frames inside a block in isotp_rcv_cf(). So so->rx.state
+can stay in ISOTP_WAIT_DATA without a running rx timeout:
+
+- isotp_send_fc() returns early, when it can not allocate the skb or
+  does not find the CAN device anymore
+- isotp_rcv_ff() does not send a flow control frame in listen mode
+- isotp_rcv_cf() has stopped the rx timeout and does not restart it at
+  the end of a block, when the flow control frame is not sent
+- isotp_rcv_cf() has stopped the rx timeout before it drops a
+  consecutive frame with an invalid length (reported by Sashiko)
+
+On a bound socket the next first frame or single frame resets the
+state. But when the CAN device has been removed, no further CAN frame
+is received and so->rx.state remains in ISOTP_WAIT_DATA. isotp_bind()
+then rejects a new binding with -EAGAIN until the socket is closed.
+
+Start the rx timeout in isotp_rcv_ff() and isotp_rcv_cf() whenever the
+reception continues in ISOTP_WAIT_DATA state, before a flow control
+frame is sent. isotp_send_fc() restarts the rx timeout as before. All
+this runs under so->rx_lock, so the order of the rx timeout start and
+the transmission of the flow control frame does not matter.
+
+In listen mode a first frame that is not followed by consecutive
+frames now leads to ETIMEDOUT, like a missing consecutive frame inside
+a block already does. So a listening socket reports a missing
+consecutive frame consistently, independent of its position in the
+PDU.
+
+Check the length of a consecutive frame first in isotp_rcv_cf(), so
+that an invalid frame is dropped without stopping the rx timeout. An
+invalid frame also no longer updates the timestamp for
+CAN_ISOTP_FORCE_RXSTMIN.
+
+Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
+Cc: stable@vger.kernel.org
+Reported-by: Sashiko <sashiko-bot@kernel.org>
+Closes: https://lore.kernel.org/linux-can/179504035916.3136.12986898667697830880@kernel.org/
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+Changes in v7:
+- isotp_rcv_cf(): check the CF length before stopping the rx timeout
+  (Sashiko review)
+---
+ net/can/isotp.c | 37 +++++++++++++++++++++----------------
+ 1 file changed, 21 insertions(+), 16 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 8229b6a69ecd..0b7db1ead7a9 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -632,10 +632,14 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 
+ 	/* initial setup for this pdu reception */
+ 	so->rx.sn = 1;
+ 	WRITE_ONCE(so->rx.state, ISOTP_WAIT_DATA);
+ 
++	/* start rx timeout, isotp_send_fc() restarts it */
++	hrtimer_start(&so->rxtimer, ktime_set(ISOTP_FC_TIMEOUT, 0),
++		      HRTIMER_MODE_REL_SOFT);
++
+ 	/* no creation of flow control frames */
+ 	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
+ 		return 0;
+ 
+ 	/* send our first FC frame */
+@@ -648,10 +652,21 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+ {
+ 	struct isotp_sock *so = isotp_sk(sk);
+ 	struct sk_buff *nskb;
+ 	int i;
+ 
++	/* CFs are never longer than the FF */
++	if (cf->len > so->rx.ll_dl)
++		return 1;
++
++	/* CFs have usually the LL_DL length */
++	if (cf->len < so->rx.ll_dl) {
++		/* this is only allowed for the last CF */
++		if (so->rx.len - so->rx.idx > so->rx.ll_dl - ae - N_PCI_SZ)
++			return 1;
++	}
++
+ 	if (READ_ONCE(so->rx.state) != ISOTP_WAIT_DATA)
+ 		return 0;
+ 
+ 	/* drop if timestamp gap is less than force_rx_stmin nano secs */
+ 	if (so->opt.flags & CAN_ISOTP_FORCE_RXSTMIN) {
+@@ -660,29 +675,19 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+ 			return 0;
+ 
+ 		so->lastrxcf_tstamp = skb->tstamp;
+ 	}
+ 
++	/* stop the rx timeout only for valid CFs (checked above) */
+ 	hrtimer_cancel(&so->rxtimer);
+ 
+ 	/* isotp_rx_timer_handler() may have raced us for so->rx.state
+ 	 * while hrtimer_cancel() above waited for it to finish => recheck
+ 	 */
+ 	if (READ_ONCE(so->rx.state) != ISOTP_WAIT_DATA)
+ 		return 1;
+ 
+-	/* CFs are never longer than the FF */
+-	if (cf->len > so->rx.ll_dl)
+-		return 1;
+-
+-	/* CFs have usually the LL_DL length */
+-	if (cf->len < so->rx.ll_dl) {
+-		/* this is only allowed for the last CF */
+-		if (so->rx.len - so->rx.idx > so->rx.ll_dl - ae - N_PCI_SZ)
+-			return 1;
+-	}
+-
+ 	if ((cf->data[ae] & 0x0F) != so->rx.sn) {
+ 		/* wrong sn detected - report 'illegal byte sequence' */
+ 		sk->sk_err = EILSEQ;
+ 		if (!sock_flag(sk, SOCK_DEAD))
+ 			sk_error_report(sk);
+@@ -724,17 +729,17 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+ 		nskb->dev = skb->dev;
+ 		isotp_rcv_skb(nskb, sk);
+ 		return 0;
+ 	}
+ 
++	/* start rx timeout, isotp_send_fc() restarts it */
++	hrtimer_start(&so->rxtimer, ktime_set(ISOTP_FC_TIMEOUT, 0),
++		      HRTIMER_MODE_REL_SOFT);
++
+ 	/* perform blocksize handling, if enabled */
+-	if (!so->rxfc.bs || ++so->rx.bs < so->rxfc.bs) {
+-		/* start rx timeout watchdog */
+-		hrtimer_start(&so->rxtimer, ktime_set(ISOTP_FC_TIMEOUT, 0),
+-			      HRTIMER_MODE_REL_SOFT);
++	if (!so->rxfc.bs || ++so->rx.bs < so->rxfc.bs)
+ 		return 0;
+-	}
+ 
+ 	/* no creation of flow control frames */
+ 	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
+ 		return 0;
+ 
+
+-- 
+2.53.0
+

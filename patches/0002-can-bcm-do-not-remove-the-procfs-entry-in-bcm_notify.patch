@@ -1,0 +1,180 @@
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 12:22:15 +0100
+Subject: [PATCH v7 2/8] can: bcm: do not remove the procfs entry in
+ bcm_notify()
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Message-Id: <20261120-can-bcmlock-memcg-v7-2-bf826d3a6a34@hartkopp.net>
+References: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+In-Reply-To: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+To: linux-can@vger.kernel.org
+Cc: Marc Kleine-Budde <mkl@pengutronix.de>, 
+ Oleksij Rempel <o.rempel@pengutronix.de>, 
+ Vincent Mailhol <mailhol@kernel.org>, Zhu Ling <zhuling0805@qq.com>, 
+ Oliver Hartkopp <socketcan@hartkopp.net>
+X-Mailer: b4 0.15.2
+X-Developer-Signature: v=1; a=ed25519-sha256; t=1795173733; l=5744;
+ i=socketcan@hartkopp.net; s=20260128; h=from:subject:message-id;
+ bh=5ZVj9zJbo3hpX3s/iiPgBkIURgOaGpGZNd2t5brt1xk=;
+ b=eLlGnZ4TxTuCJ7EmVlg9Vd8A5W2pkuBa/seYr72WDqDYnKEUEel30QD1H0CFYIWukUoBJI+uX
+ HymeWEQzrtmD4AvYEjVA07w6d3nopekxvx28EOYYgzoGNttvphyIwNE
+X-Developer-Key: i=socketcan@hartkopp.net; a=ed25519;
+ pk=/gU/7/wBqak3kTsTeFbCCqUi9dnh+1i6ITEkfPj/BvU=
+
+bcm_notify() removes the procfs entry of a CAN_BCM socket that is bound
+to a vanishing CAN device with remove_proc_entry() while holding RTNL.
+remove_proc_entry() waits for all running readers of this entry. A
+reader of /proc/net/can-bcm/<inode> that stalls in its copy to user
+space, e.g. on a FUSE backed mapping, therefore blocks RTNL on the
+unregistration or namespace change of the bound CAN device.
+
+The entry has been removed in bcm_notify() so that a later
+bcm_connect() of the unbound socket can register it again without a
+"proc_dir_entry already registered" warning.
+
+The CAN_BCM socket itself stays usable after a NETDEV_UNREGISTER:
+bcm_notify() only unbinds it and reports ENODEV, so the application can
+connect() the socket again, e.g. to a re-created CAN device. The name
+of the procfs entry is the inode number of the socket, which does not
+change until the socket is closed.
+
+Keep the procfs entry until bcm_release() instead, which removes it
+after the socket has left the notifier list and without holding RTNL.
+bcm_connect() only creates the entry, if it does not exist yet.
+bcm_proc_show() reports an unbound socket as "unbound" instead of
+showing the cleared ifindex as "any".
+
+As bcm_proc_show() can now run while the socket is bound or unbound, it
+reads bo->ifindex locklessly with READ_ONCE() and the writers use
+WRITE_ONCE(). The NETDEV_DOWN handling in bcm_notify(), which runs
+without lock_sock(), reads bo->bound and bo->ifindex with READ_ONCE()
+as well. bo->ifindex is still only modified under lock_sock(). A
+concurrent bind or unbind may show an intermediate state in the procfs
+output, which is acceptable for this debug information.
+
+Fixes: 76fe372ccb81 ("can: bcm: Remove proc entry when dev is unregistered.")
+Cc: stable@vger.kernel.org
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+Changes in v3:
+- read bo->bound and bo->ifindex with READ_ONCE() for NETDEV_DOWN and
+  shortened the bcm_notify() comment (Sashiko review)
+- v2: https://lore.kernel.org/linux-can/20261108-can-bcmlock-memcg-v2-2-19fafdfc9d12@hartkopp.net/
+
+Changes in v2:
+- read bo->ifindex with READ_ONCE() in bcm_proc_show() and write it
+  with WRITE_ONCE(), updated the bcm_notify() comment (Sashiko review)
+- v1: https://lore.kernel.org/linux-can/20261107-can-bcmlock-memcg-v1-2-482d9f5be1fd@hartkopp.net/
+---
+ net/can/bcm.c | 33 +++++++++++++++------------------
+ 1 file changed, 15 insertions(+), 18 deletions(-)
+
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index 3f4c8d828337..1595b7720c98 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -217,15 +217,20 @@ static int bcm_proc_show(struct seq_file *m, void *v)
+ {
+ 	char ifname[IFNAMSIZ];
+ 	struct net *net = m->private;
+ 	struct sock *sk = (struct sock *)pde_data(m->file->f_inode);
+ 	struct bcm_sock *bo = bcm_sk(sk);
++	int ifindex = READ_ONCE(bo->ifindex);
+ 	struct bcm_op *op;
+ 
+ 	seq_printf(m, ">>> sock inode %s", bo->procname);
+ 	seq_printf(m, " / dropped %lu", bo->dropped_usr_msgs);
+-	seq_printf(m, " / bound %s", bcm_proc_getifname(net, ifname, bo->ifindex));
++	if (READ_ONCE(bo->bound))
++		seq_printf(m, " / bound %s",
++			   bcm_proc_getifname(net, ifname, ifindex));
++	else
++		seq_puts(m, " / unbound");
+ 	seq_printf(m, " <<<\n");
+ 
+ 	rcu_read_lock();
+ 
+ 	list_for_each_entry_rcu(op, &bo->rx_ops, list) {
+@@ -1864,23 +1869,13 @@ static void bcm_notify(struct bcm_sock *bo, unsigned long msg,
+ 			if (op->ifindex == dev->ifindex)
+ 				hrtimer_cancel(&op->timer);
+ 
+ 		/* remove device reference, if this is our bound device */
+ 		if (bo->bound && bo->ifindex == dev->ifindex) {
+-#if IS_ENABLED(CONFIG_PROC_FS)
+-			if (sock_net(sk)->can.bcmproc_dir && bo->bcm_proc_read) {
+-				remove_proc_entry(bo->procname, sock_net(sk)->can.bcmproc_dir);
+-				bo->bcm_proc_read = NULL;
+-			}
+-#endif
+-			/* Paired with the lockless fast-path check in
+-			 * bcm_sendmsg(); bo->ifindex itself is only ever
+-			 * accessed under lock_sock() so it needs no
+-			 * annotation.
+-			 */
++			/* pairs with the lockless check in bcm_sendmsg() */
+ 			WRITE_ONCE(bo->bound, 0);
+-			bo->ifindex = 0;
++			WRITE_ONCE(bo->ifindex, 0);
+ 			notify_enodev = 1;
+ 		}
+ 
+ 		release_sock(sk);
+ 
+@@ -1890,11 +1885,12 @@ static void bcm_notify(struct bcm_sock *bo, unsigned long msg,
+ 				sk_error_report(sk);
+ 		}
+ 		break;
+ 
+ 	case NETDEV_DOWN:
+-		if (bo->bound && bo->ifindex == dev->ifindex) {
++		if (READ_ONCE(bo->bound) &&
++		    READ_ONCE(bo->ifindex) == dev->ifindex) {
+ 			sk->sk_err = ENETDOWN;
+ 			if (!sock_flag(sk, SOCK_DEAD))
+ 				sk_error_report(sk);
+ 		}
+ 	}
+@@ -2011,11 +2007,11 @@ static int bcm_release(struct socket *sock)
+ 	}
+ 
+ 	/* remove device reference */
+ 	if (bo->bound) {
+ 		WRITE_ONCE(bo->bound, 0);
+-		bo->ifindex = 0;
++		WRITE_ONCE(bo->ifindex, 0);
+ 	}
+ 
+ 	sock_orphan(sk);
+ 	sock->sk = NULL;
+ 
+@@ -2058,20 +2054,21 @@ static int bcm_connect(struct socket *sock, struct sockaddr_unsized *uaddr, int
+ 			dev_put(dev);
+ 			ret = -ENODEV;
+ 			goto fail;
+ 		}
+ 
+-		bo->ifindex = dev->ifindex;
++		WRITE_ONCE(bo->ifindex, dev->ifindex);
+ 		dev_put(dev);
+ 
+ 	} else {
+ 		/* no interface reference for ifindex = 0 ('any' CAN device) */
+-		bo->ifindex = 0;
++		WRITE_ONCE(bo->ifindex, 0);
+ 	}
+ 
+ #if IS_ENABLED(CONFIG_PROC_FS)
+-	if (net->can.bcmproc_dir) {
++	/* create the procfs entry once, it is removed in bcm_release() */
++	if (net->can.bcmproc_dir && !bo->bcm_proc_read) {
+ 		/* use unique socket inode number as filename */
+ 		snprintf(bo->procname, sizeof(bo->procname),
+ 			 "%llu", sock_i_ino(sk));
+ 		bo->bcm_proc_read = proc_create_net_single(bo->procname, 0644,
+ 						     net->can.bcmproc_dir,
+
+-- 
+2.53.0
+

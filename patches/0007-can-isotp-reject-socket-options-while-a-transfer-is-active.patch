@@ -1,0 +1,119 @@
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 12:22:20 +0100
+Subject: [PATCH v7 7/8] can: isotp: reject socket options while a transfer
+ is active
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Message-Id: <20261120-can-bcmlock-memcg-v7-7-bf826d3a6a34@hartkopp.net>
+References: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+In-Reply-To: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+To: linux-can@vger.kernel.org
+Cc: Marc Kleine-Budde <mkl@pengutronix.de>, 
+ Oleksij Rempel <o.rempel@pengutronix.de>, 
+ Vincent Mailhol <mailhol@kernel.org>, Zhu Ling <zhuling0805@qq.com>, 
+ Sashiko <sashiko-bot@kernel.org>, Oliver Hartkopp <socketcan@hartkopp.net>
+X-Mailer: b4 0.15.2
+X-Developer-Signature: v=1; a=ed25519-sha256; t=1795173733; l=3709;
+ i=socketcan@hartkopp.net; s=20260128; h=from:subject:message-id;
+ bh=rcNOTBtdV3kOvS+VZk1zki6fAANbgJsTSgev3Ndkb9s=;
+ b=mKXPEVkTps274av5G4e06adJfyE1uOXJ1eXeb1GEMQcy8x5yxa82Cckr1nUyvyjgqq3qpfVAN
+ n5Xzf8vr1IHDQe9/9BP4yW+9OCXUul9jqrD3Qa1bSY+SShqna++LzeQ
+X-Developer-Key: i=socketcan@hartkopp.net; a=ed25519;
+ pk=/gU/7/wBqak3kTsTeFbCCqUi9dnh+1i6ITEkfPj/BvU=
+
+isotp_setsockopt_locked() only checks so->bound before it changes the
+CAN_ISOTP socket options. When the bound CAN device is unregistered,
+isotp_notify() clears so->bound, but a transmission or reception that
+is already in progress is not stopped and may still be draining.
+
+isotp_sendmsg() claims so->tx.state and rechecks so->bound. After that
+it can block in sock_alloc_send_skb(), while the device is unregistered
+and so->bound is cleared. A concurrent setsockopt() can then change
+so->opt, so->ll and so->tx.ll_dl, before isotp_sendmsg() reads so->ll.mtu
+and so->tx.ll_dl again to build the CAN frame for the skb that has been
+allocated with the former so->ll.mtu.
+
+isotp_bind() already rejects a new binding while so->tx.state or
+so->rx.state are not ISOTP_IDLE for the same reason. Add this check to
+isotp_setsockopt_locked() and return -EAGAIN, so the socket options can
+only be changed when no transfer is active. As the transmission and
+the reception always end by their timeouts at the latest, this state
+is only temporary.
+
+isotp_sendmsg() reads the CAN_ISOTP_EXTEND_ADDR and
+CAN_ISOTP_WAIT_TX_DONE flags at its beginning, before the transfer is
+claimed. Read them after the claim and the so->bound recheck instead,
+so that all socket options used by isotp_sendmsg() are covered by this
+check.
+
+Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
+Reported-by: Sashiko <sashiko-bot@kernel.org>
+Closes: https://sashiko.dev/#/bug/linux-d1d3ef49-c24e-4f3a-91ce-20f8fb222684
+Cc: stable@vger.kernel.org
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+Changes in v7:
+- read ae and wait_tx_done after the claim of the transfer
+  (Sashiko review)
+---
+ net/can/isotp.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 0b7db1ead7a9..642fec500af9 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -1126,12 +1126,12 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 	struct isotp_sock *so = isotp_sk(sk);
+ 	struct sk_buff *skb;
+ 	struct can_skb_ext *csx;
+ 	struct net_device *dev;
+ 	struct canfd_frame *cf;
+-	int ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
+-	int wait_tx_done = (so->opt.flags & CAN_ISOTP_WAIT_TX_DONE) ? 1 : 0;
++	int ae;
++	int wait_tx_done;
+ 	s64 hrtimer_sec = ISOTP_ECHO_TIMEOUT;
+ 	struct hrtimer *tx_hrt = &so->echotimer;
+ 	u32 new_state = ISOTP_SENDING;
+ 	u32 my_gen;
+ 	u32 old_cfecho;
+@@ -1186,10 +1186,14 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 	if (!READ_ONCE(so->bound)) {
+ 		err = -EADDRNOTAVAIL;
+ 		goto err_out_drop;
+ 	}
+ 
++	/* read the options after the claim of the transfer */
++	ae = (so->opt.flags & CAN_ISOTP_EXTEND_ADDR) ? 1 : 0;
++	wait_tx_done = (so->opt.flags & CAN_ISOTP_WAIT_TX_DONE) ? 1 : 0;
++
+ 	/* PDU size > default => try max_pdu_size */
+ 	if (size > so->tx.buflen && so->tx.buflen < max_pdu_size) {
+ 		u8 *newbuf = kmalloc(max_pdu_size, GFP_KERNEL);
+ 
+ 		if (newbuf) {
+@@ -1724,10 +1728,18 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ 	int ret = 0;
+ 
+ 	if (so->bound)
+ 		return -EISCONN;
+ 
++	/* A transmission or reception that outlived a previous binding
++	 * (unbound by NETDEV_UNREGISTER) may still be draining and uses the
++	 * socket options, see isotp_bind().
++	 */
++	if (READ_ONCE(so->tx.state) != ISOTP_IDLE ||
++	    READ_ONCE(so->rx.state) != ISOTP_IDLE)
++		return -EAGAIN;
++
+ 	switch (optname) {
+ 	case CAN_ISOTP_OPTS:
+ 		memcpy(&so->opt, val, sizeof(so->opt));
+ 
+ 		/* no separate rx_ext_address is given => use ext_address */
+
+-- 
+2.53.0
+

@@ -1,0 +1,238 @@
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 12:22:17 +0100
+Subject: [PATCH v7 4/8] can: isotp: use a private mutex instead of
+ lock_sock()
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Message-Id: <20261120-can-bcmlock-memcg-v7-4-bf826d3a6a34@hartkopp.net>
+References: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+In-Reply-To: <20261120-can-bcmlock-memcg-v7-0-bf826d3a6a34@hartkopp.net>
+To: linux-can@vger.kernel.org
+Cc: Marc Kleine-Budde <mkl@pengutronix.de>, 
+ Oleksij Rempel <o.rempel@pengutronix.de>, 
+ Vincent Mailhol <mailhol@kernel.org>, Zhu Ling <zhuling0805@qq.com>, 
+ Oliver Hartkopp <socketcan@hartkopp.net>
+X-Mailer: b4 0.15.2
+X-Developer-Signature: v=1; a=ed25519-sha256; t=1795173733; l=7524;
+ i=socketcan@hartkopp.net; s=20260128; h=from:subject:message-id;
+ bh=LzREcHis030hMdIGjsMovZQZPfS+OgBmYjMlE+yThHg=;
+ b=Vrzqlcpi//0Sp5ifDGULq46bJTE6GXtKJIxbANvRorvGG3wDY7PUd3xpEtYZ0MNPQUs66+2m4
+ CBugztywUpfB+OEedEqgXydhAa+lX2WEBLwOcxW6pgMWDxE+0XBDEqH
+X-Developer-Key: i=socketcan@hartkopp.net; a=ed25519;
+ pk=/gU/7/wBqak3kTsTeFbCCqUi9dnh+1i6ITEkfPj/BvU=
+
+isotp_notify() takes lock_sock() of a socket that is bound to a
+vanishing CAN device while holding RTNL. Any path that holds the socket
+lock while accessing user space can therefore block RTNL. Since
+commit 43c973a0887d ("can: raw, isotp: copy socket options outside of
+lock_sock()") the CAN_ISOTP specific socket options copy their values
+outside of the socket lock, but the generic SOL_SOCKET options in
+sk_setsockopt() and sk_getsockopt() still access user space under
+sockopt_lock_sock(), e.g. for SO_ATTACH_FILTER, SO_LINGER or SO_TXTIME.
+
+CAN_ISOTP only uses lock_sock() to serialize the binding and the
+CAN_ISOTP socket options. It does not use the socket backlog, as the
+received PDUs are queued directly to the socket.
+
+Replace lock_sock() with the mutex conf_lock in struct isotp_sock. The
+generic socket options do not take this mutex, so they can not block
+isotp_notify() anymore. No user space access happens while the mutex is
+held. The memory allocations for the CAN receivers in isotp_bind() are
+still done under the mutex, as they have been under lock_sock() before.
+isotp_release() drops the mutex before synchronize_rcu() and the
+hrtimer cancellation, as the socket has already left the notifier list
+at this point.
+
+Following a Sashiko feedback for raw.c it would make sense to copy the
+content in isotp_getsockopt() under the new conf_lock mutex too.
+This change will be addressed in a follow-up patch as it goes beyond a
+simple lock replacement intended for stable.
+
+Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
+Cc: stable@vger.kernel.org # depends on "can: raw, isotp: copy socket options outside of lock_sock()"
+Tested-by: Oliver Hartkopp <socketcan@hartkopp.net>
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 28 ++++++++++++++++------------
+ 1 file changed, 16 insertions(+), 12 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 7a90ba3f1cf1..8229b6a69ecd 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -180,10 +180,11 @@ struct isotp_sock {
+ 	u32 tx_result[ISOTP_TX_RESULT_SLOTS]; /* per-generation result slots */
+ 	struct tpcon rx, tx;
+ 	struct list_head notifier;
+ 	wait_queue_head_t wait;
+ 	spinlock_t rx_lock; /* protect single thread state machine */
++	struct mutex conf_lock; /* protects bind and setsockopt */
+ };
+ 
+ static LIST_HEAD(isotp_notifier_list);
+ static DEFINE_SPINLOCK(isotp_notifier_lock);
+ static struct isotp_sock *isotp_busy_notifier;
+@@ -1495,11 +1496,11 @@ static int isotp_release(struct socket *sock)
+ 		spin_lock(&isotp_notifier_lock);
+ 	}
+ 	list_del(&so->notifier);
+ 	spin_unlock(&isotp_notifier_lock);
+ 
+-	lock_sock(sk);
++	mutex_lock(&so->conf_lock);
+ 
+ 	/* remove current filters & unregister
+ 	 * the tracked reference so->dev keeps the device's receive lists
+ 	 * accessible, even after a namespace change
+ 	 */
+@@ -1517,10 +1518,12 @@ static int isotp_release(struct socket *sock)
+ 
+ 	so->ifindex = 0;
+ 	WRITE_ONCE(so->bound, 0);
+ 	so->dev = NULL;
+ 
++	mutex_unlock(&so->conf_lock);
++
+ 	/* Always wait for a grace period before touching the timers below.
+ 	 * A concurrent NETDEV_UNREGISTER may have already unregistered our
+ 	 * filters and cleared so->bound in isotp_notify() without waiting
+ 	 * for in-flight isotp_rcv() callers to finish, so this call must not
+ 	 * be skipped just because so->bound is already 0 here.
+@@ -1533,11 +1536,10 @@ static int isotp_release(struct socket *sock)
+ 	hrtimer_cancel(&so->rxtimer);
+ 
+ 	sock_orphan(sk);
+ 	sock->sk = NULL;
+ 
+-	release_sock(sk);
+ 	sock_prot_inuse_add(net, sk->sk_prot, -1);
+ 	sock_put(sk);
+ 
+ 	return 0;
+ }
+@@ -1583,22 +1585,22 @@ static int isotp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int l
+ 	}
+ 
+ 	if (!addr->can_ifindex)
+ 		return -ENODEV;
+ 
+-	/* lock_sock() serializes the binding with isotp_notify() */
+-	lock_sock(sk);
++	/* so->conf_lock serializes the binding with isotp_notify() */
++	mutex_lock(&so->conf_lock);
+ 
+ 	if (so->bound) {
+ 		err = -EINVAL;
+ 		goto out;
+ 	}
+ 
+ 	/* A transmission or reception that outlived a previous binding
+ 	 * (unbound by NETDEV_UNREGISTER) may still be draining; the FC/echo
+ 	 * and RX watchdog timers bound how long this takes. Checked together
+-	 * with so->bound in the same lock_sock() section above, so there is
++	 * with so->bound in the same so->conf_lock section above, so there is
+ 	 * no window in which a concurrent isotp_notify() could be missed.
+ 	 */
+ 	if (READ_ONCE(so->tx.state) != ISOTP_IDLE ||
+ 	    READ_ONCE(so->rx.state) != ISOTP_IDLE) {
+ 		err = -EAGAIN;
+@@ -1684,11 +1686,11 @@ static int isotp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int l
+ 		sk->sk_err = ENETDOWN;
+ 		if (!sock_flag(sk, SOCK_DEAD))
+ 			sk_error_report(sk);
+ 	}
+ 
+-	release_sock(sk);
++	mutex_unlock(&so->conf_lock);
+ 
+ 	return err;
+ }
+ 
+ static int isotp_getname(struct socket *sock, struct sockaddr *uaddr, int peer)
+@@ -1788,10 +1790,11 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ static int isotp_setsockopt(struct socket *sock, int level, int optname,
+ 			    sockptr_t optval, unsigned int optlen)
+ 
+ {
+ 	struct sock *sk = sock->sk;
++	struct isotp_sock *so = isotp_sk(sk);
+ 	union {
+ 		struct can_isotp_options opt;
+ 		struct can_isotp_fc_options rxfc;
+ 		struct can_isotp_ll_options ll;
+ 		u32 stmin;
+@@ -1800,11 +1803,11 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
+ 	int ret;
+ 
+ 	if (level != SOL_CAN_ISOTP)
+ 		return -EINVAL;
+ 
+-	/* copy the option values from user space before lock_sock() */
++	/* copy the option values from user space before taking so->conf_lock */
+ 	switch (optname) {
+ 	case CAN_ISOTP_OPTS:
+ 		size = sizeof(val.opt);
+ 		break;
+ 
+@@ -1829,13 +1832,13 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
+ 		return -EINVAL;
+ 
+ 	if (copy_from_sockptr(&val, optval, size))
+ 		return -EFAULT;
+ 
+-	lock_sock(sk);
++	mutex_lock(&so->conf_lock);
+ 	ret = isotp_setsockopt_locked(sock, optname, &val);
+-	release_sock(sk);
++	mutex_unlock(&so->conf_lock);
+ 	return ret;
+ }
+ 
+ static int isotp_getsockopt(struct socket *sock, int level, int optname,
+ 			    char __user *optval, int __user *optlen)
+@@ -1904,13 +1907,13 @@ static void isotp_notify(struct isotp_sock *so, unsigned long msg,
+ 	if (READ_ONCE(so->dev) != dev)
+ 		return;
+ 
+ 	switch (msg) {
+ 	case NETDEV_UNREGISTER:
+-		lock_sock(sk);
++		mutex_lock(&so->conf_lock);
+ 		if (so->dev != dev) {
+-			release_sock(sk);
++			mutex_unlock(&so->conf_lock);
+ 			break;
+ 		}
+ 
+ 		/* remove current filters & unregister */
+ 		if (so->bound) {
+@@ -1930,11 +1933,11 @@ static void isotp_notify(struct isotp_sock *so, unsigned long msg,
+ 		WRITE_ONCE(so->dev, NULL);
+ 
+ 		sk->sk_err = ENODEV;
+ 		if (!sock_flag(sk, SOCK_DEAD))
+ 			sk_error_report(sk);
+-		release_sock(sk);
++		mutex_unlock(&so->conf_lock);
+ 		break;
+ 
+ 	case NETDEV_DOWN:
+ 		if (!READ_ONCE(so->bound))
+ 			break;
+@@ -1989,10 +1992,11 @@ static int isotp_init(struct sock *sk)
+ 	struct isotp_sock *so = isotp_sk(sk);
+ 
+ 	so->ifindex = 0;
+ 	so->bound = 0;
+ 	so->dev = NULL;
++	mutex_init(&so->conf_lock);
+ 
+ 	so->opt.flags = CAN_ISOTP_DEFAULT_FLAGS;
+ 	so->opt.ext_address = CAN_ISOTP_DEFAULT_EXT_ADDRESS;
+ 	so->opt.rx_ext_address = CAN_ISOTP_DEFAULT_EXT_ADDRESS;
+ 	so->opt.rxpad_content = CAN_ISOTP_DEFAULT_PAD_CONTENT;
+
+-- 
+2.53.0
+
