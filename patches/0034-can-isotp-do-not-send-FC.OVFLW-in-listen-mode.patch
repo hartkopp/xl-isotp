@@ -1,0 +1,37 @@
+From 50d956ca107950db978772136a8c263552dcdf05 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 21:03:06 +0000
+Subject: [PATCH 34/34] can: isotp: do not send FC.OVFLW in listen mode
+
+isotp_rcv_ff() sends a FC with overflow status when the FF_DL exceeds
+the receive buffer before checking CAN_ISOTP_LISTEN_MODE. So a listening
+socket sends a FC on the bus, which can abort the transfer between other
+nodes using the same CAN IDs.
+
+Ignore the FF in listen mode instead.
+
+Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp/protocolrx.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
+index 11a01d8..07a9849 100644
+--- a/net/can/isotp/protocolrx.c
++++ b/net/can/isotp/protocolrx.c
+@@ -327,8 +327,9 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+ 	}
+ 
+ 	if (so->rx.len > so->rx.buflen) {
+-		/* send FC frame with overflow status */
+-		isotp_send_fc(sk, ae, ISOTP_FC_OVFLW);
++		/* send FC frame with overflow status (not in listen mode) */
++		if (!(so->opt.flags & CAN_ISOTP_LISTEN_MODE))
++			isotp_send_fc(sk, ae, ISOTP_FC_OVFLW);
+ 		return;
+ 	}
+ 
+-- 
+2.43.0
+

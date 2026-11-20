@@ -1,7 +1,7 @@
 From 25117f291d74fcc26643e1b926a117156823e6bb Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 19:13:48 +0000
-Subject: [PATCH 30/33] can: isotp: fix FF_DL wrap around in the single FF
+Subject: [PATCH 30/34] can: isotp: fix FF_DL wrap around in the single FF
  check
 
 The single FF check in isotp_rcv_ff() uses u32 arithmetic and wraps

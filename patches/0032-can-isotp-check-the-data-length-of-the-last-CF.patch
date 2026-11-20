@@ -1,7 +1,7 @@
 From d4f306e259f9cd1347ff50518ba784af63adc34a Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:37 +0000
-Subject: [PATCH 32/33] can: isotp: check the data length of the last CF
+Subject: [PATCH 32/34] can: isotp: check the data length of the last CF
 
 A CF shorter than LL_DL is only allowed as last CF. The check only
 tested whether the remaining PDU data would fit into a full CF. So a

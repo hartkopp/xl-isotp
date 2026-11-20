@@ -1,7 +1,7 @@
 From 649ebecfbb6694bf0b2cf6bc6bcada979e8cc11e Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:59:01 +0000
-Subject: [PATCH 33/33] can: isotp: check the minimum FF_DL
+Subject: [PATCH 33/34] can: isotp: check the minimum FF_DL
 
 ISO 15765-2 requires FF_DL >= FF_DLmin: a PDU that fits into a SF must
 not be segmented. The single FF check only ensured that a CF is needed,
