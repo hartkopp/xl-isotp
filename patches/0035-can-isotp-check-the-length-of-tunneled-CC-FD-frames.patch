@@ -1,0 +1,42 @@
+From 40ec45dd58009d4d8c549d01afcba896d23ed774 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 21:21:36 +0000
+Subject: [PATCH 35/35] can: isotp: check the length of tunneled CC/FD frames
+
+The CAN XL frames with SDT 6 (CC tunnel) and SDT 7 (FD tunnel) carry
+CAN CC/FD N_PDUs but were accepted with any CAN XL data length. E.g. a
+SDT 6 socket received SF/FF/CF with more than 8 bytes.
+
+Drop tunneled frames that exceed 8 bytes (SDT 6) or that are no valid
+CAN FD data length (SDT 7).
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp/protocolrx.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
+index 2da3c69..e41f473 100644
+--- a/net/can/isotp/protocolrx.c
++++ b/net/can/isotp/protocolrx.c
+@@ -472,6 +472,17 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+ 		if ((vcid & CANXL_VCID_VAL_MASK) != so->xl.rx_vcid)
+ 			return NULL;
+ 
++		/* tunneled CC/FD N_PDUs have the CC/FD frame lengths */
++		if (so->xl.sdt_mode == CAN_CIA_CC_TUNNEL_SDT &&
++		    cu->xl.len > CAN_MAX_DLEN)
++			return NULL;
++
++		if (so->xl.sdt_mode == CAN_CIA_FD_TUNNEL_SDT &&
++		    cu->xl.len > CAN_MAX_DLEN &&
++		    (cu->xl.len > CANFD_MAX_DLEN ||
++		     cu->xl.len != padlen(cu->xl.len)))
++			return NULL;
++
+ 		*datalen = cu->xl.len;
+ 
+ 		return (u8 *)&cu->xl.data;
+-- 
+2.43.0
+

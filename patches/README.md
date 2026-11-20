@@ -203,7 +203,7 @@ Patches 1 bis 23:
   alle drei Flags ab. Der ursprüngliche Zählblock mit `bcfl_num` in
   `isotp_setsockopt_locked()` entfällt.
 
-## Patches 30 bis 34: Fixes für den Empfangspfad (vorläufig hinter 29)
+## Patches 30 bis 35: Fixes für den Empfangspfad (vorläufig hinter 29)
 
 | # | Patch | Fixes |
 |---|---|---|
@@ -212,6 +212,7 @@ Patches 1 bis 23:
 | 32 | can: isotp: check the data length of the last CF | `e057dd3fc20f` |
 | 33 | can: isotp: check the minimum FF_DL | - |
 | 34 | can: isotp: do not send FC.OVFLW in listen mode | `e057dd3fc20f` |
+| 35 | can: isotp: check the length of tunneled CC/FD frames | - |
 
 - **Patch 30**: FF_DL nahe 2^32 lief in der Single-FF-Prüfung über, der
   FF wurde ohne FC.OVFLW verworfen (Test RX-FF-011/-ae).
@@ -228,6 +229,9 @@ Patches 1 bis 23:
   den Empfangspuffer übersteigt, und konnte so fremde Übertragungen
   abbrechen (Test RX-FF-006). Die Listen-Mode-Prüfung steht jetzt am
   Anfang von `isotp_send_fc()` statt bei den Aufrufern.
+- **Patch 35**: CAN XL mit SDT 6/7 nahm getunnelte CC/FD-N_PDUs mit
+  beliebiger XL-Länge an (Test XL-SDT6-001, XL-SDT7-002). Ohne Fixes-Tag;
+  soll beim Umsortieren in Patch 28 aufgehen.
 - Gefunden mit can-tests `functest/isotp` (Branch `isotp_ft`). Die Fixes
   sollen später an den Anfang der net-next-Patches (stable).
 
@@ -241,9 +245,9 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 34 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 35 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
-- Patch 30 bis 34 sind nur angewendet, nicht übersetzt.
+- Patch 30 bis 35 sind nur angewendet, nicht übersetzt.
 - `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 29 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
   `CONFIG_DEBUG_MUTEXES`, `CONFIG_PROC_FS` und `CONFIG_MEMCG`). Kein vollständiger

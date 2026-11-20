@@ -1,7 +1,7 @@
 From 1bcfd67c49d846bcf1571ded27569341afc4d13f Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:36 +0000
-Subject: [PATCH 31/34] can: isotp: drop frames without N_PCI
+Subject: [PATCH 31/35] can: isotp: drop frames without N_PCI
 
 isotp_rcv() reads the address extension and the N_PCI without checking
 the CAN frame data length. So frames with CAN_DL < ae + N_PCI_SZ are
