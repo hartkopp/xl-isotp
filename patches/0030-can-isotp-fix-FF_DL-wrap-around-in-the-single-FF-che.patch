@@ -1,0 +1,56 @@
+From 988dc0824ebd3aabe9b0bcee61bee17ae64df572 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 19:13:48 +0000
+Subject: [PATCH 30/30] can: isotp: fix FF_DL wrap around in the single FF
+ check
+
+isotp_rcv_ff() drops a First Frame whose FF_DL would fit into the FF
+itself as a following Consecutive Frame is required:
+
+	if (so->rx.len + ae + ff_pci_sz <= so->rx.ll_dl)
+
+so->rx.len is an unsigned int that holds the 32 bit FF_DL, so the sum is
+calculated with u32 arithmetic and wraps around for FF_DL values close to
+2^32. With the 32 bit FF_DL escape (ff_pci_sz = 6) and a CAN CC frame
+(ll_dl = 8) the FF_DL values 0xFFFFFFFA..0xFFFFFFFF (0xFFFFFFF9..0xFFFFFFFF
+with extended addressing) result in a sum of 0..5 (0..6), which is <= 8.
+These FFs are dropped as 'single FF' without sending the FC with overflow
+status that is sent for all other FF_DL values exceeding the receive
+buffer. The sender only detects the failure by its N_Bs timeout.
+
+Move ae and ff_pci_sz to the right side of the comparison:
+
+	if (so->rx.len <= so->rx.ll_dl - ae - ff_pci_sz)
+
+Without the wrap around both checks are mathematically equivalent
+(a + x <= b <=> a <= b - x). The right side can not underflow: ll_dl is
+at least CAN_ISOTP_MIN_TX_DL (8) as FFs with a smaller CAN_DL are dropped
+before and ll_dl is either the CAN_DL or the padded CAN_DL, while
+ae + ff_pci_sz is at most 1 + 6 = 7. So the result is always >= 1 and the
+check remains unchanged for all FF_DL values that did not wrap around.
+
+The wrap around was detected with the functional test cases RX-FF-011
+and RX-FF-011-ae of the can-tests CAN_ISOTP test suite.
+
+Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp/protocolrx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
+index 3764678..730d889 100644
+--- a/net/can/isotp/protocolrx.c
++++ b/net/can/isotp/protocolrx.c
+@@ -302,7 +302,7 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+ 	}
+ 
+ 	/* single FF's are not allowed. rx.len has to require a CF */
+-	if (so->rx.len + ae + ff_pci_sz <= so->rx.ll_dl)
++	if (so->rx.len <= so->rx.ll_dl - ae - ff_pci_sz)
+ 		return;
+ 
+ 	/* PDU size > default => try max_pdu_size
+-- 
+2.43.0
+
