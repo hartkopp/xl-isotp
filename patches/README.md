@@ -55,6 +55,30 @@ Serie (Zhu Ling, "can: netlink: fix static FD-NON-ISO mode validation")
 Die bisher als Folgepatch vorbereitete CF-Längenprüfung ist in Patch 6
 aufgegangen.
 
+## Patches 9 und 10: Folgepatches für net-next (kein Fix, nicht stable)
+
+| # | Patch |
+|---|---|
+| 9 | can: raw: read socket options under conf_lock in raw_getsockopt() |
+| 10 | can: isotp: read socket options under conf_lock in isotp_getsockopt() |
+
+Beide lesen die Optionswerte unter `conf_lock` in eine lokale Variable und
+kopieren sie erst nach `mutex_unlock()` in den User-Space. Sie setzen auf
+Patch 3 bzw. 4 auf und stellen den Struct-Kommentar auf "sockopts".
+
+## Patch 11: memcg-Abrechnung für net-next (zurückgestellt)
+
+| # | Patch |
+|---|---|
+| 11 | can: enable memcg accounting for user triggered allocations |
+
+Der für v5 vorbereitete Stand ohne Abrechnung des isotp-RX-Puffers in
+`isotp_rcv_ff()` (dort nur ein Kommentar), auf Patch 10 aufgesetzt. Der
+Code ist gegenüber der vorbereiteten Fassung unverändert, die
+Changelog-Notizen unter dem `---` sind übernommen. Der Patch wird erst
+verschickt, wenn die Fixes in net-next angekommen sind; Changelog und
+Links sind dann anzupassen.
+
 ## Basis
 
 Die Patches wenden auf `main` dieses Repositorys an (CAN-Code aus
@@ -65,11 +89,11 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 11 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
-- `net/can/` übersetzt nach jedem der Patches 1 bis 7 fehler- und
+- `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 11 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
-  `CONFIG_DEBUG_MUTEXES` und `CONFIG_PROC_FS`). Kein vollständiger
+  `CONFIG_DEBUG_MUTEXES`, `CONFIG_PROC_FS` und `CONFIG_MEMCG`). Kein vollständiger
   Kernel-Build.
 - Laufzeittest der v7 in `can_mutex` (20.11.2026, Test-Suite
   `can-lock-tests-mutex-v5`, short, lockdep und KASAN): auf
@@ -83,5 +107,9 @@ dort identisch.
   | v6 (`...-00143-gab966e98efcf`) | PASS | PASS | FAIL |
   | v7 (`...-net-locktest-00448-gb4092438c4d1`) | PASS | PASS | PASS |
 
+- Patch 9 und 10 sind nur übersetzt. Als Funktionstest bietet sich
+  `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
+  CAN_ISOTP-Optionen setzt und zurückliest.
+- Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
   den `Fixes:`-Zeilen.
