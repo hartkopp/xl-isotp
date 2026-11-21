@@ -1,0 +1,58 @@
+From f3063e8eb2925a3516d38b7527222875a7bd041a Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 21:10:39 +0000
+Subject: [PATCH 18/26] can: isotp: do not send FC.OVFLW in listen mode
+
+isotp_rcv_ff() sends a FC with overflow status when the FF_DL exceeds
+the receive buffer without checking CAN_ISOTP_LISTEN_MODE. So a
+listening socket sends a FC on the bus, which can abort the transfer
+between other nodes using the same CAN IDs.
+
+Move the listen mode check from the callers into isotp_send_fc() before
+any state changes to cover all FC frames.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 865fa6b..65b1c35 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -295,6 +295,10 @@ static int isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
+ 	struct isotp_sock *so = isotp_sk(sk);
+ 	int can_send_ret;
+ 
++	/* no creation of flow control frames in listen mode */
++	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
++		return 0;
++
+ 	nskb = alloc_skb(so->ll.mtu, gfp_any());
+ 	if (!nskb)
+ 		return 1;
+@@ -652,10 +656,6 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 	hrtimer_start(&so->rxtimer, ktime_set(ISOTP_FC_TIMEOUT, 0),
+ 		      HRTIMER_MODE_REL_SOFT);
+ 
+-	/* no creation of flow control frames */
+-	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
+-		return 0;
+-
+ 	/* send our first FC frame */
+ 	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
+ 	return 0;
+@@ -755,10 +755,6 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+ 	if (!so->rxfc.bs || ++so->rx.bs < so->rxfc.bs)
+ 		return 0;
+ 
+-	/* no creation of flow control frames */
+-	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
+-		return 0;
+-
+ 	/* we reached the specified blocksize so->rxfc.bs */
+ 	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
+ 	return 0;
+-- 
+2.43.0
+

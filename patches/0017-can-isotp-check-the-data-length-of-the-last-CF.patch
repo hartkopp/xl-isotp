@@ -1,0 +1,40 @@
+From 9bc1b0b68a8f465a910627f2bcfde4460ed8b0ed Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 20:33:37 +0000
+Subject: [PATCH 17/26] can: isotp: check the data length of the last CF
+
+A CF shorter than LL_DL is only allowed as last CF and therefore has to
+carry all missing bytes of the PDU. But the missing bytes were compared
+with the payload of a full CF. So a short CF without all missing bytes
+was accepted and the reception continued with further CFs.
+
+Drop a short CF when the missing PDU bytes exceed its possible payload
+(cf->len - ae - N_PCI_SZ). Padding is still possible as it only
+increases cf->len. isotp_rcv() ensures cf->len >= ae + N_PCI_SZ, so
+the payload size can not underflow.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 835064a..865fa6b 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -674,8 +674,10 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+ 
+ 	/* CFs have usually the LL_DL length */
+ 	if (cf->len < so->rx.ll_dl) {
+-		/* this is only allowed for the last CF */
+-		if (so->rx.len - so->rx.idx > so->rx.ll_dl - ae - N_PCI_SZ)
++		/* only the last CF may be shorter: drop it when the
++		 * missing PDU bytes exceed its possible payload
++		 */
++		if (so->rx.len - so->rx.idx > cf->len - ae - N_PCI_SZ)
+ 			return 1;
+ 	}
+ 
+-- 
+2.43.0
+

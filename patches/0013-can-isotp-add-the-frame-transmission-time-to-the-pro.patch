@@ -1,0 +1,80 @@
+From 2919cb63fdd2211e0cd133bb01bb845826257e5b Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 13:13:51 +0000
+Subject: [PATCH 13/26] can: isotp: add the frame transmission time to the
+ protocol timeouts
+
+The frame_txtime element of struct can_isotp_options is documented as
+the frame transmission time (N_As/N_Ar). It is added to the gap between
+the consecutive frames in the tx path, but it is missing when the
+timeouts are started after the transmission of a CAN frame:
+
+- isotp_send_fc() starts the rx timeout for the next consecutive frame
+  without the transmission time of the flow control frame (N_Ar)
+- isotp_sendmsg() starts the timeout for the first flow control frame
+  without the transmission time of the first frame (N_As)
+
+Add so->frame_txtime to both timeouts to comply with the documentation
+in isotp.h. The local echo timeout for single frames and first frames
+without flow control uses the same timer start in isotp_sendmsg() and
+gets the frame transmission time as well, which has no effect. As the
+value now extends the protocol timeouts, reject frame_txtime values
+above 100 ms with -EINVAL before the options are applied.
+
+There is no separate check for N_As/N_Ar timeouts, as the transmission
+time of a CAN frame has no real world effect compared to the protocol
+timeouts of one and two seconds.
+
+Reported-by: Wentian Ye <yewentian395@gmail.com>
+Closes: https://lore.kernel.org/linux-can/eb5e9618-3dbf-42cb-a635-752ff9fbcb99@hartkopp.net/
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 7be3d93..197dc7b 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -127,6 +127,7 @@ MODULE_PARM_DESC(max_pdu_size, "maximum isotp pdu size (default "
+ 
+ #define ISOTP_FC_TIMEOUT 1	/* 1 sec */
+ #define ISOTP_ECHO_TIMEOUT 2	/* 2 secs */
++#define ISOTP_MAX_FRAME_TXTIME_NS (100 * NSEC_PER_MSEC) /* max N_Ar/N_As */
+ 
+ /* so->tx_result[so->tx_gen % ISOTP_TX_RESULT_SLOTS] holds the packed value
+  * (err << ISOTP_TX_RESULT_GEN_BITS | gen) for each tx generation slot, so it
+@@ -349,7 +350,8 @@ static int isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
+ 	so->lastrxcf_tstamp = ktime_set(0, 0);
+ 
+ 	/* start rx timeout watchdog */
+-	hrtimer_start(&so->rxtimer, ktime_set(ISOTP_FC_TIMEOUT, 0),
++	hrtimer_start(&so->rxtimer,
++		      ktime_set(ISOTP_FC_TIMEOUT, so->frame_txtime),
+ 		      HRTIMER_MODE_REL_SOFT);
+ 	return 0;
+ }
+@@ -1333,7 +1335,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 	}
+ 	/* WAIT_FIRST_FC for standard FF, else stays ISOTP_SENDING */
+ 	WRITE_ONCE(so->tx.state, new_state);
+-	hrtimer_start(tx_hrt, ktime_set(hrtimer_sec, 0),
++	hrtimer_start(tx_hrt, ktime_set(hrtimer_sec, so->frame_txtime),
+ 		      HRTIMER_MODE_REL_SOFT);
+ 	spin_unlock_bh(&so->rx_lock);
+ 
+@@ -1751,6 +1753,11 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ 		if (hweight32(opt->flags & ISOTP_ALL_BC_FLAGS) > 1)
+ 			return -EINVAL;
+ 
++		/* limit the frame transmission time (N_As/N_Ar) */
++		if (opt->frame_txtime != CAN_ISOTP_FRAME_TXTIME_ZERO &&
++		    opt->frame_txtime > ISOTP_MAX_FRAME_TXTIME_NS)
++			return -EINVAL;
++
+ 		memcpy(&so->opt, opt, sizeof(*opt));
+ 
+ 		/* no separate rx_ext_address is given => use ext_address */
+-- 
+2.43.0
+
