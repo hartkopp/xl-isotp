@@ -219,7 +219,14 @@ Patches 1 bis 26:
   einen SF mit CAN_DL > 8 nur mit dem FD-Escape (N_PCI `0x00`), eine
   XL-N_PDU nur mit dem XL-SF-Flag. FD-N_PDUs müssen auch mit SDT 9 eine
   gültige FD-Länge haben, und XL-N_PDUs (LL_DL > 8) werden nicht auf
-  Padding geprüft.
+  Padding geprüft. Da XL-N_PDUs kein Padding haben, müssen SF, letzter CF
+  und FC einer XL-N_PDU genau so lang sein wie ihr Inhalt (sonst werden
+  SF/CF verworfen, ein FC führt zu `EBADMSG`).
+- Patch 31 setzt den wirksamen TX_DL erst in `isotp_bind()` (XL-Modus:
+  `CAN_ISOTP_XL_OPTS`, sonst `CAN_ISOTP_LL_OPTS`), unabhängig von der
+  Reihenfolge der Socket-Optionen. Im XL-Modus prüft `isotp_bind()` die
+  MTU des Interfaces gegen `CANXL_HDR_SIZE` + TX_DL (mindestens
+  `CANXL_MIN_MTU`).
 - `CAN_ISOTP_XL_OPTS` (Patch 31) folgt dem Schema der 7.4-Socket-Optionen:
   `isotp_setsockopt()` kopiert den Wert vor `conf_lock` mit
   Längenprüfung, `isotp_setsockopt_locked()` prüft ihn über einen Zeiger,
@@ -287,7 +294,8 @@ dort identisch.
   werden in jedem Schritt neu übersetzt. Die Padding-Regeln in Patch 31
   sind danach entstanden; der Endstand nach Patch 32 ist damit als Modul
   übersetzt, die Zwischenstände 30 bis 32 nicht einzeln. Die reservierten
-  Bytes in `struct can_isotp_xl_options` (Patch 31) sind danach
+  Bytes in `struct can_isotp_xl_options`, der TX_DL in `isotp_bind()`, die
+  XL-MTU-Prüfung und die exakten XL-Längen (alle Patch 31) sind danach
   hinzugekommen und noch nicht übersetzt.
 - Der Endstand nach Patch 32 ist mit can-tests `functest/isotp` (Branch
   `isotp_ft`, `bc5b7b5`, vor dem Rebase `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
