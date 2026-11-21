@@ -1,0 +1,627 @@
+From 0752099523435a9626ff6777f38864290ec720ed Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Mon, 11 May 2026 12:26:22 +0200
+Subject: [PATCH 31/32] can: isotp: add CAN XL protocol extension support
+
+Changes for CAN XL:
+
+- add sockopt for CAN XL link layer options
+- create skb lengths depending on CAN XL length information
+- create and check new CAN XL frame header information
+- extend CAN FD SF length encoding for CAN XL
+- support CAN XL encapsulation for CC/FD N_PDUs incl. padding
+- support CAN XL encapsulation for CC/FD/XL CAN CiA SDTs 6/7/9
+
+No functional change for CAN CC/FD protocols.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ include/uapi/linux/can/isotp.h |  37 +++++++++++
+ net/can/isotp/isotp.c          | 108 +++++++++++++++++++++++++++++++++
+ net/can/isotp/isotp_defines.h  |  28 ++++++++-
+ net/can/isotp/isotp_protocol.h |   6 ++
+ net/can/isotp/protocolrx.c     |  89 +++++++++++++++++++++++----
+ net/can/isotp/protocoltx.c     |  69 ++++++++++++++++-----
+ 6 files changed, 308 insertions(+), 29 deletions(-)
+
+diff --git a/include/uapi/linux/can/isotp.h b/include/uapi/linux/can/isotp.h
+index 580d2ae..fd080d4 100644
+--- a/include/uapi/linux/can/isotp.h
++++ b/include/uapi/linux/can/isotp.h
+@@ -67,6 +67,8 @@
+ 
+ #define CAN_ISOTP_LL_OPTS	5	/* pass struct can_isotp_ll_options */
+ 
++#define CAN_ISOTP_XL_OPTS	6	/* pass struct can_isotp_xl_options */
++
+ struct can_isotp_options {
+ 
+ 	__u32 flags;		/* set flags for isotp behaviour.	*/
+@@ -122,6 +124,41 @@ struct can_isotp_ll_options {
+ 				/* by the CAN netdriver configuration	*/
+ };
+ 
++struct can_isotp_xl_options {
++
++	__u32	tx_dl;		/* tx link layer data length in bytes	*/
++				/* (configured maximum payload length)	*/
++				/* CAN XL tx_dl range : 8 .. 2048	*/
++				/* => rx path supports all LL_DL values */
++
++	canid_t	tx_addr;	/* tx address for ISO 15765-2 channel	*/
++				/* => for XL acceptance field (AF)	*/
++
++	canid_t	rx_addr;	/* rx address for ISO 15765-2 channel	*/
++				/* => check of XL acceptance field (AF)	*/
++
++	__u8	tx_flags;	/* set into struct canxl_frame.flags	*/
++				/* at frame creation: e.g. CANXL_SEC	*/
++				/* (setting CANXL_XLF is mandatory)	*/
++
++	__u8	rx_flags;	/* checked in struct canxl_frame.flags	*/
++				/* at frame reception time		*/
++				/* (setting CANXL_XLF is mandatory)	*/
++
++	__u8	tx_vcid;	/* VCID value set into CAN XL frame at	*/
++				/* frame creation time (outgoing)	*/
++
++	__u8	rx_vcid;	/* checked for equality in CAN XL frame	*/
++				/* at reception time (incoming)		*/
++
++	__u8	sdt_mode;	/* CAN CiA 611-1 SDT select (06/07/09)	*/
++};
++
++/* CAN CiA 611-1 Service Data Unit Types for ISO 15765-2 or CC/FD tunneling */
++#define CAN_CIA_CC_TUNNEL_SDT	0x06	/* tunneling of CC frames in XL */
++#define CAN_CIA_FD_TUNNEL_SDT	0x07	/* tunneling of FD frames in XL */
++#define CAN_CIA_ISO15765_2_SDT	0x09	/* native ISO 15765-2 N_PDU SDT */
++
+ /* flags for isotp behaviour */
+ 
+ #define CAN_ISOTP_LISTEN_MODE	0x0001	/* listen only (do not send FC) */
+diff --git a/net/can/isotp/isotp.c b/net/can/isotp/isotp.c
+index 49347f9..85e075b 100644
+--- a/net/can/isotp/isotp.c
++++ b/net/can/isotp/isotp.c
+@@ -222,6 +222,39 @@ static bool isotp_invalid_canid(canid_t canid)
+ 	return false;
+ }
+ 
++static bool isotp_bind_xl(struct isotp_sock *so)
++{
++	/* set AF TX address */
++	so->af_txaddr = so->xl.tx_addr;
++
++	/* move potential TX EFF flag for 29 bit address */
++	if (so->af_txaddr & CAN_EFF_FLAG)
++		so->af_txaddr ^= (CAN_EFF_FLAG | CAN_CIA_SDT_EFF);
++
++	if (so->xl.sdt_mode == CAN_CIA_FD_TUNNEL_SDT) {
++		if (so->ll.mtu != CANFD_MTU)
++			return false;
++		if (so->ll.tx_flags & CANFD_BRS)
++			so->af_txaddr |= CAN_CIA_SDT7_BRS;
++	}
++
++	if (so->xl.sdt_mode == CAN_CIA_CC_TUNNEL_SDT) {
++		if (so->ll.mtu != CAN_MTU)
++			return false;
++		if (so->tx.ll_dl != CAN_MAX_DLEN)
++			return false;
++	}
++
++	/* set AF RX address */
++	so->af_rxaddr = so->xl.rx_addr;
++
++	/* move potential RX EFF flag for 29 bit address */
++	if (so->af_rxaddr & CAN_EFF_FLAG)
++		so->af_rxaddr ^= (CAN_EFF_FLAG | CAN_CIA_SDT_EFF);
++
++	return true;
++}
++
+ static int isotp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int len)
+ {
+ 	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
+@@ -248,6 +281,21 @@ static int isotp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int l
+ 	if (isotp_register_rxid(so) && isotp_invalid_canid(rx_id))
+ 		return -EINVAL;
+ 
++	/* Allow padding only for valid CAN CC/FD TX_DL lengths */
++	if (((so->opt.flags & CAN_ISOTP_TX_PADDING) || fd_pdu(so)) &&
++	    so->tx.ll_dl != padlen(so->tx.ll_dl))
++		return -EINVAL;
++
++	if (so->xl.tx_flags & CANXL_XLF) {
++		/* CAN XL priority field is only 11 bit */
++		if ((tx_id | rx_id) & CAN_EFF_FLAG)
++			return -EINVAL;
++
++		/* check and setup CAN XL specific content */
++		if (!isotp_bind_xl(so))
++			return -EINVAL;
++	}
++
+ 	if (!addr->can_ifindex)
+ 		return -ENODEV;
+ 
+@@ -455,6 +503,52 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ 		break;
+ 	}
+ 
++	case CAN_ISOTP_XL_OPTS: {
++		const struct can_isotp_xl_options *xl = val;
++
++		/* disable XL mode? */
++		if (!(xl->tx_flags & CANXL_XLF)) {
++			/* reset LL_DL default (8, 12, .., 64) */
++			so->tx.ll_dl = so->ll.tx_dl;
++
++			/* disable XL mode */
++			so->xl.tx_flags = 0;
++
++			/* standard exit */
++			break;
++		}
++
++		/* check the other required CAN XL flags/settings */
++		if ((xl->tx_flags & ~CANXL_FLAGS_MASK) ||
++		    !(xl->rx_flags & CANXL_XLF) ||
++		    (xl->rx_flags & ~CANXL_FLAGS_MASK))
++			return -EINVAL;
++
++		/* check valid tx_dl range for CAN XL link layer */
++		if (xl->tx_dl < CAN_ISOTP_MIN_TX_DL ||
++		    xl->tx_dl > CANXL_MAX_DLEN)
++			return -EINVAL;
++
++		/* check for correct CAN identifier */
++		if (isotp_invalid_canid(xl->tx_addr))
++			return -EINVAL;
++
++		if (isotp_invalid_canid(xl->rx_addr))
++			return -EINVAL;
++
++		/* check supported Service Data Unit Types */
++		if (xl->sdt_mode != CAN_CIA_CC_TUNNEL_SDT &&
++		    xl->sdt_mode != CAN_CIA_FD_TUNNEL_SDT &&
++		    xl->sdt_mode != CAN_CIA_ISO15765_2_SDT)
++			return -EINVAL;
++
++		memcpy(&so->xl, xl, sizeof(*xl));
++
++		/* set ll_dl for tx path to similar place as for rx */
++		so->tx.ll_dl = xl->tx_dl;
++		break;
++	}
++
+ 	default:
+ 		ret = -ENOPROTOOPT;
+ 	}
+@@ -472,6 +566,7 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
+ 		struct can_isotp_options opt;
+ 		struct can_isotp_fc_options rxfc;
+ 		struct can_isotp_ll_options ll;
++		struct can_isotp_xl_options xl;
+ 		u32 stmin;
+ 	} val;
+ 	unsigned int size;
+@@ -499,6 +594,10 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
+ 		size = sizeof(val.ll);
+ 		break;
+ 
++	case CAN_ISOTP_XL_OPTS:
++		size = sizeof(val.xl);
++		break;
++
+ 	default:
+ 		return -ENOPROTOOPT;
+ 	}
+@@ -524,6 +623,7 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
+ 		struct can_isotp_options opt;
+ 		struct can_isotp_fc_options rxfc;
+ 		struct can_isotp_ll_options ll;
++		struct can_isotp_xl_options xl;
+ 		u32 stmin;
+ 	} val;
+ 	int len;
+@@ -567,6 +667,11 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
+ 		val.ll = so->ll;
+ 		break;
+ 
++	case CAN_ISOTP_XL_OPTS:
++		len = min_t(int, len, sizeof(struct can_isotp_xl_options));
++		val.xl = so->xl;
++		break;
++
+ 	default:
+ 		err = -ENOPROTOOPT;
+ 	}
+@@ -704,6 +809,9 @@ static int isotp_init(struct sock *sk)
+ 	/* set ll_dl for tx path to similar place as for rx */
+ 	so->tx.ll_dl = so->ll.tx_dl;
+ 
++	/* CAN XL link layer options disabled by default */
++	so->xl.tx_flags = 0;
++
+ 	so->rx.state = ISOTP_IDLE;
+ 	so->tx.state = ISOTP_IDLE;
+ 
+diff --git a/net/can/isotp/isotp_defines.h b/net/can/isotp/isotp_defines.h
+index f1bc9fc..d2a111e 100644
+--- a/net/can/isotp/isotp_defines.h
++++ b/net/can/isotp/isotp_defines.h
+@@ -31,6 +31,16 @@
+ /* limit the isotp pdu size from the optional module parameter to 1MByte */
+ #define MAX_PDU_SIZE (1025 * 1024U)
+ 
++/* valid bits that can/must be set in struct canxl_frame.flags */
++#define CANXL_FLAGS_MASK (CANXL_XLF | CANXL_RRS | CANXL_SEC)
++
++/* CAN CiA 611-1 Acceptance Field flags for SDTs 06/07/09 addressing */
++#define CAN_CIA_SDT_ZDLC 0x80000000U /* Zero DLC flag (zero data length) */
++#define CAN_CIA_SDT6_RTR 0x40000000U /* RTR flag for SDT 06 CAN CC tunnel */
++#define CAN_CIA_SDT7_BRS 0x40000000U /* BRS flag for SDT 07 CAN FD tunnel */
++#define CAN_CIA_SDT_EFF  0x20000000U /* 29 bit ISO-TP address flag */
++#define CAN_CIA_ADDR_MASK (CAN_CIA_SDT_EFF | CAN_EFF_MASK) /* address only */
++
+ /* N_PCI type values in bits 7-4 of N_PCI bytes */
+ #define N_PCI_SF 0x00	/* single frame */
+ #define N_PCI_FF 0x10	/* first frame */
+@@ -40,9 +50,11 @@
+ 
+ #define N_PCI(pci) ((pci) & N_PCI_MASK)
+ 
++#define N_PCI_XL_SF 8	/* XL SF PCI flag (bit 3 of N_PCI low nibble) */
++
+ #define N_PCI_SZ 1	/* size of the PCI byte #1 */
+ #define SF_PCI_SZ4 1	/* size of SingleFrame PCI including 4 bit SF_DL */
+-#define SF_PCI_SZ8 2	/* size of SingleFrame PCI including 8 bit SF_DL */
++#define SF_PCI_SZ11 2	/* size of SingleFrame PCI including 6/11 bit SF_DL */
+ #define FF_PCI_SZ12 2	/* size of FirstFrame PCI including 12 bit FF_DL */
+ #define FF_PCI_SZ32 6	/* size of FirstFrame PCI including 32 bit FF_DL */
+ #define FC_CONTENT_SZ 3	/* flow control content size in byte (FS/BS/STmin) */
+@@ -83,9 +95,9 @@ struct tpcon {
+ 	unsigned int len;
+ 	unsigned int idx;
+ 	u32 state;
++	u32 ll_dl;
+ 	u8 bs;
+ 	u8 sn;
+-	u8 ll_dl;
+ 	u8 sbuf[DEFAULT_MAX_PDU_SIZE];
+ };
+ 
+@@ -97,12 +109,15 @@ struct isotp_sock {
+ 	netdevice_tracker dev_tracker;
+ 	canid_t txid;
+ 	canid_t rxid;
++	u32 af_txaddr;
++	u32 af_rxaddr;
+ 	ktime_t tx_gap;
+ 	ktime_t lastrxcf_tstamp;
+ 	struct hrtimer rxtimer, txtimer, txfrtimer, echotimer;
+ 	struct can_isotp_options opt;
+ 	struct can_isotp_fc_options rxfc, txfc;
+ 	struct can_isotp_ll_options ll;
++	struct can_isotp_xl_options xl;
+ 	u32 frame_txtime;
+ 	u32 force_tx_stmin;
+ 	u32 force_rx_stmin;
+@@ -116,4 +131,13 @@ struct isotp_sock {
+ 	struct mutex conf_lock; /* protects bind and sockopts */
+ };
+ 
++/* CAN CC/FD/XL frame union to properly access the data elements of different
++ * types of CAN frames all starting at skb->data
++ */
++union cfu {
++	struct can_frame cc;
++	struct canfd_frame fd;
++	struct canxl_frame xl;
++};
++
+ #endif /* _ISOTP_DEFINES_H_ */
+diff --git a/net/can/isotp/isotp_protocol.h b/net/can/isotp/isotp_protocol.h
+index fe464bf..906b637 100644
+--- a/net/can/isotp/isotp_protocol.h
++++ b/net/can/isotp/isotp_protocol.h
+@@ -35,4 +35,10 @@ static inline bool fd_pdu(struct isotp_sock *so)
+ 	return (so->ll.mtu == CANFD_MTU);
+ }
+ 
++/* CAN XL frame encapsulation enabled (for CC/FD/XL N_PDUs) */
++static inline bool xl_encap(struct isotp_sock *so)
++{
++	return (so->xl.tx_flags & CANXL_XLF);
++}
++
+ #endif /* _ISOTP_PROTOCOL_H_ */
+diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
+index 340d233..2c1836f 100644
+--- a/net/can/isotp/protocolrx.c
++++ b/net/can/isotp/protocolrx.c
+@@ -273,9 +273,12 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+ 		return;
+ 
+ 	/* get the used sender LL_DL from the (first) CAN frame data length */
+-	so->rx.ll_dl = padlen(datalen);
++	if (fd_pdu(so) && datalen > CAN_ISOTP_MIN_TX_DL)
++		so->rx.ll_dl = padlen(datalen);
++	else
++		so->rx.ll_dl = datalen;
+ 
+-	/* CAN FD: the first frame uses the entire LL_DL length (no padding) */
++	/* the first frame uses the entire LL_DL length (no padding) */
+ 	if (datalen != so->rx.ll_dl)
+ 		return;
+ 
+@@ -303,7 +306,7 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+ 	if (so->rx.ll_dl == CAN_ISOTP_MIN_TX_DL)
+ 		sf_max = CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae;
+ 	else
+-		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
++		sf_max = so->rx.ll_dl - SF_PCI_SZ11 - ae;
+ 
+ 	if (so->rx.len <= sf_max)
+ 		return;
+@@ -445,18 +448,63 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
+ 	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
+ }
+ 
+-/* check CC/FD frame and return the pointer to the frame data section */
++/* check CC/FD/XL frame and return the pointer to the frame data section */
+ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+ 				  unsigned int *datalen)
+ {
+ 	/* all types of CAN frames start at skb->data */
+-	struct canfd_frame *cf = (struct canfd_frame *)skb->data;
++	union cfu *cu = (union cfu *)skb->data;
++
++	/* check CAN XL frame */
++	if (xl_encap(so)) {
++		canid_t vcid = cu->xl.prio >> CANXL_VCID_OFFSET;
++
++		if (!can_is_canxl_skb(skb))
++			return NULL;
++
++		if ((cu->xl.prio & CANXL_PRIO_MASK) != so->rxid ||
++		    cu->xl.flags != so->xl.rx_flags ||
++		    /* ignore CAN_CIA_SDT7_BRS at reception time */
++		    (cu->xl.af & CAN_CIA_ADDR_MASK) != so->af_rxaddr ||
++		    cu->xl.sdt != so->xl.sdt_mode)
++			return NULL;
++
++		if ((vcid & CANXL_VCID_VAL_MASK) != so->xl.rx_vcid)
++			return NULL;
++
++		/* check unsafe tunneled CC/FD N_PDUs */
++		if (so->xl.sdt_mode == CAN_CIA_CC_TUNNEL_SDT) {
++			/* zero-data-length and RTR frames are not allowed */
++			if (cu->xl.af & (CAN_CIA_SDT_ZDLC | CAN_CIA_SDT6_RTR))
++				return NULL;
++
++			/* check for valid CAN CC data length */
++			if (cu->xl.len > CAN_MAX_DLEN)
++				return NULL;
++		}
++
++		if (so->xl.sdt_mode == CAN_CIA_FD_TUNNEL_SDT) {
++			/* zero-data-length frames are not allowed */
++			if (cu->xl.af & CAN_CIA_SDT_ZDLC)
++				return NULL;
++
++			/* check for valid CAN FD data length */
++			if (cu->xl.len > CAN_MAX_DLEN &&
++			    (cu->xl.len > CANFD_MAX_DLEN ||
++			     cu->xl.len != padlen(cu->xl.len)))
++				return NULL;
++		}
++
++		*datalen = cu->xl.len;
++
++		return (u8 *)&cu->xl.data;
++	}
+ 
+ 	/* check CAN CC/FD frame:
+ 	 * Strictly receive only frames with the configured MTU size
+ 	 * => clear separation of CAN2.0 / CAN FD transport channels
+ 	 */
+-	if (cf->can_id != so->rxid || skb->len != so->ll.mtu)
++	if (cu->fd.can_id != so->rxid || skb->len != so->ll.mtu)
+ 		return NULL;
+ 
+ 	/* check for correct CAN CC/FD frame content */
+@@ -467,9 +515,9 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+ 		return NULL;
+ 	}
+ 
+-	*datalen = cf->len;
++	*datalen = cu->fd.len;
+ 
+-	return (u8 *)&cf->data;
++	return (u8 *)&cu->fd.data;
+ }
+ 
+ void isotp_rcv(struct sk_buff *skb, void *skdata)
+@@ -521,7 +569,7 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+ 		 *
+ 		 * As we do not have a rx.ll_dl configuration, we can only test
+ 		 * if the CAN frames payload length matches the LL_DL == 8
+-		 * requirements - no matter if it's CAN 2.0 or CAN FD
++		 * requirements - no matter if it's CAN 2.0 or CAN FD or CAN XL
+ 		 */
+ 
+ 		/* get the SF_DL from the N_PCI byte */
+@@ -531,19 +579,36 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+ 			isotp_rcv_sf(sk, data, datalen,
+ 				     SF_PCI_SZ4 + ae, skb, sf_dl);
+ 		} else {
+-			if (can_is_canfd_skb(skb)) {
++			if (xl_encap(so)) {
++				/* padding uses the FD SF_DL == 0 ESC value */
++				if (((so->opt.flags & ISOTP_CHECK_PADDING) ||
++				     fd_pdu(so)) &&
++				    datalen == padlen(datalen))
++					sf_dl |= N_PCI_XL_SF;
++
++				/* isotp_check_frame_head() checked the rest */
++				if (sf_dl & N_PCI_XL_SF) {
++					/* use the low nibble content of N_PCI byte */
++					sf_dl &= 7;
++					sf_dl <<= 8;
++					/* add low byte of SF data length */
++					sf_dl |= *(data + SF_PCI_SZ4 + ae);
++					isotp_rcv_sf(sk, data, datalen,
++						     SF_PCI_SZ11 + ae, skb, sf_dl);
++				}
++			} else if (can_is_canfd_skb(skb)) {
+ 				/* We have a CAN FD frame and CAN_DL is greater than 8:
+ 				 * Only frames with the SF_DL == 0 ESC value are valid.
+ 				 *
+ 				 * If so take care of the increased SF PCI size
+-				 * (SF_PCI_SZ8) to point to the message content behind
++				 * (SF_PCI_SZ11) to point to the message content behind
+ 				 * the extended SF PCI info and get the real SF_DL
+ 				 * length value from the formerly first data byte.
+ 				 */
+ 				if (sf_dl == 0) {
+ 					sf_dl = *(data + SF_PCI_SZ4 + ae);
+ 					isotp_rcv_sf(sk, data, datalen,
+-						     SF_PCI_SZ8 + ae, skb, sf_dl);
++						     SF_PCI_SZ11 + ae, skb, sf_dl);
+ 				}
+ 			}
+ 		}
+diff --git a/net/can/isotp/protocoltx.c b/net/can/isotp/protocoltx.c
+index c573717..a363936 100644
+--- a/net/can/isotp/protocoltx.c
++++ b/net/can/isotp/protocoltx.c
+@@ -100,22 +100,44 @@ static bool isotp_tx_gen_done(struct isotp_sock *so, u32 gen)
+ /* calculate CAN protocol specific length for CAN sk_buffs */
+ static int isotp_tx_skb_len(struct isotp_sock *so, unsigned int datalen)
+ {
+-	return so->ll.mtu;
++	if (xl_encap(so))
++		return CANXL_HDR_SIZE + datalen;
++	else
++		return so->ll.mtu;
+ }
+ 
+-/* fill CC/FD frame and return the pointer to the frame data section */
++/* fill CC/FD/XL frame and return the pointer to the frame data section */
+ static u8 *isotp_fill_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+ 				 unsigned int datalen)
+ {
+ 	/* all types of CAN frames start at skb->data */
+-	struct canfd_frame *cf = (struct canfd_frame *)skb->data;
++	union cfu *cu = (union cfu *)skb->data;
++
++	/* fill CAN XL frame */
++	if (xl_encap(so)) {
++		cu->xl.prio = so->txid;
++		cu->xl.flags = so->xl.tx_flags; /* incl. SEC/RRS */
++		cu->xl.af = so->af_txaddr;
++		cu->xl.len = datalen;
++		cu->xl.sdt = so->xl.sdt_mode;
++		if (so->xl.tx_vcid)
++			cu->xl.prio |= (so->xl.tx_vcid << CANXL_VCID_OFFSET);
++
++		return (u8 *)&cu->xl.data;
++	}
+ 
+ 	/* fill CAN CC/FD frame */
+-	cf->can_id = so->txid;
+-	cf->flags = so->ll.tx_flags;
+-	cf->len = datalen;
++	cu->fd.can_id = so->txid;
++	cu->fd.flags = so->ll.tx_flags;
++	cu->fd.len = datalen;
+ 
+-	return (u8 *)&cf->data;
++	return (u8 *)&cu->fd.data;
++}
++
++static bool isotp_req_pad(struct isotp_sock *so, unsigned int datalen)
++{
++	return ((fd_pdu(so) && datalen > CAN_ISOTP_MIN_TX_DL) ||
++		(so->opt.flags & CAN_ISOTP_TX_PADDING));
+ }
+ 
+ static int get_padlength(struct isotp_sock *so, unsigned int *datalen,
+@@ -158,7 +180,11 @@ void isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
+ 	if (so->opt.flags & CAN_ISOTP_LISTEN_MODE)
+ 		return;
+ 
+-	skblen = isotp_tx_skb_len(so, datalen);
++	/* increase skb->len for CAN FC padding */
++	if (so->opt.flags & CAN_ISOTP_TX_PADDING)
++		skblen = isotp_tx_skb_len(so, CAN_ISOTP_MIN_TX_DL);
++	else
++		skblen = isotp_tx_skb_len(so, datalen);
+ 
+ 	/* create & send flow control reply */
+ 	nskb = alloc_skb(skblen, gfp_any());
+@@ -235,7 +261,11 @@ void isotp_send_cframe(struct isotp_sock *so)
+ 	int can_send_ret;
+ 	u32 old_cfecho;
+ 
+-	skblen = isotp_tx_skb_len(so, datalen);
++	/* increase skb->len for CAN CC/FD padding */
++	if (reqlen < space && isotp_req_pad(so, datalen))
++		skblen = isotp_tx_skb_len(so, padlen(datalen));
++	else
++		skblen = isotp_tx_skb_len(so, datalen);
+ 
+ 	dev = dev_get_by_index(sock_net(sk), so->ifindex);
+ 	if (!dev)
+@@ -362,9 +392,9 @@ static unsigned int isotp_sf_ff_pci(struct isotp_sock *so, u8 *aepci)
+ 	}
+ 
+ 	/* TX_DL > 8 => CAN FD and CAN XL have the same kind of SF PCI length
+-	 * extension. So we can check for FF segmentation with SF_PCI_SZ8.
++	 * extension. So we can check for FF segmentation with SF_PCI_SZ11.
+ 	 */
+-	if (so->tx.len > so->tx.ll_dl - SF_PCI_SZ8 - ae) {
++	if (so->tx.len > so->tx.ll_dl - SF_PCI_SZ11 - ae) {
+ 		/* FF */
+ 		aepcilen = isotp_ff_pci(so, aepci);
+ 	} else if (so->tx.len <= CAN_MAX_DLEN - SF_PCI_SZ4 - ae) {
+@@ -375,13 +405,18 @@ static unsigned int isotp_sf_ff_pci(struct isotp_sock *so, u8 *aepci)
+ 		*(aepci + ae) = (u8)(so->tx.len) | N_PCI_SF;
+ 		aepcilen = SF_PCI_SZ4 + ae;
+ 	} else {
++		/* extended 2 byte SF PCI for CAN FD or CAN XL */
+ 		if (ae)
+ 			*(aepci) = so->opt.ext_address;
+ 
+-		/* CAN FD: sf_dl = 0 escape sequence in first PCI byte */
+-		*(aepci + ae) = N_PCI_SF;
++		/* follow 12 bit FF_DL notation for 6/11 bit FD/XL SF DL */
++		*(aepci + ae) = (u8)(so->tx.len >> 8) | N_PCI_SF;
+ 		*(aepci + ae + 1) = (u8)so->tx.len & 0xFFU;
+-		aepcilen = SF_PCI_SZ8 + ae;
++		aepcilen = SF_PCI_SZ11 + ae;
++
++		/* set XL SF flag for XL encapsulation if not FD PDU */
++		if (xl_encap(so) && !fd_pdu(so))
++			*(aepci + ae) |= N_PCI_XL_SF;
+ 	}
+ 
+ 	return aepcilen;
+@@ -570,7 +605,11 @@ int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 	reqlen = min_t(int, size, space);
+ 	datalen = reqlen + aepcilen;
+ 
+-	skblen = isotp_tx_skb_len(so, datalen);
++	/* increase skb->len for CAN CC/FD padding */
++	if (reqlen < space && isotp_req_pad(so, datalen))
++		skblen = isotp_tx_skb_len(so, padlen(datalen));
++	else
++		skblen = isotp_tx_skb_len(so, datalen);
+ 
+ 	dev = dev_get_by_index(sock_net(sk), so->ifindex);
+ 	if (!dev) {
+-- 
+2.43.0
+

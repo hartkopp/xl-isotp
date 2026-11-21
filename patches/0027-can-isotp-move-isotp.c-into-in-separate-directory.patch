@@ -1,0 +1,49 @@
+From 059917a7172c1ff49e8fbb4d79081cd0f7be0bf2 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Tue, 16 Dec 2025 19:54:59 +0100
+Subject: [PATCH 27/32] can: isotp: move isotp.c into in separate directory
+
+With the introduction of the CAN XL support the isotp.c file has to be
+extended with additional protocol components (SF handling, variable
+skb->len sizes, disabled padding, new CAN XL frame fields).
+As isotp.c already has more than 1700 LOC this upgrade will become
+confusing so it has to be split into smaller code chunks.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/Makefile            | 3 +--
+ net/can/isotp/Makefile      | 5 +++++
+ net/can/{ => isotp}/isotp.c | 0
+ 3 files changed, 6 insertions(+), 2 deletions(-)
+ create mode 100644 net/can/isotp/Makefile
+ rename net/can/{ => isotp}/isotp.c (100%)
+
+diff --git a/net/can/Makefile b/net/can/Makefile
+index 58f2c31..1f9e36a 100644
+--- a/net/can/Makefile
++++ b/net/can/Makefile
+@@ -18,5 +18,4 @@ can-gw-y		:= gw.o
+ 
+ obj-$(CONFIG_CAN_J1939)	+= j1939/
+ 
+-obj-$(CONFIG_CAN_ISOTP)	+= can-isotp.o
+-can-isotp-y		:= isotp.o
++obj-$(CONFIG_CAN_ISOTP)	+= isotp/
+diff --git a/net/can/isotp/Makefile b/net/can/isotp/Makefile
+new file mode 100644
+index 0000000..186c6b8
+--- /dev/null
++++ b/net/can/isotp/Makefile
+@@ -0,0 +1,5 @@
++# SPDX-License-Identifier: GPL-2.0
++
++obj-$(CONFIG_CAN_ISOTP) += can-isotp.o
++
++can-isotp-objs := isotp.o
+diff --git a/net/can/isotp.c b/net/can/isotp/isotp.c
+similarity index 100%
+rename from net/can/isotp.c
+rename to net/can/isotp/isotp.c
+-- 
+2.43.0
+
