@@ -161,6 +161,78 @@ und `split`:
   den Empfangs-Timeout schon vor der Blocksize-Prüfung. Patch 24 behält
   beides bei und entfernt nur die Rückgabewerte.
 
+## Patches 27 bis 32: CAN_ISOTP-Aufteilung und CAN XL
+
+| # | Patch |
+|---|---|
+| 27 | can: isotp: move isotp.c into in separate directory |
+| 28 | can: isotp: move common definitions to separate header file |
+| 29 | can: isotp: split isotp code |
+| 30 | can: isotp: rework CAN frame structure access for CAN XL |
+| 31 | can: isotp: add CAN XL protocol extension support |
+| 32 | can: isotp: add official support for 1-to-n multicast mode |
+
+- **Patch 27** verschiebt `net/can/isotp.c` nach `net/can/isotp/isotp.c`
+  mit eigenem Makefile.
+- **Patch 28** verschiebt Defines, `enum` und Strukturen nach
+  `isotp_defines.h`.
+- **Patch 29** teilt den Code in `isotp.c` (Socket-API), `protocolrx.c`,
+  `protocoltx.c` und `hrtimer.c` mit `isotp_protocol.h` und
+  `isotp_hrtimer.h` auf.
+- **Patch 30** greift über Datenzeiger und Datenlänge statt über
+  `struct canfd_frame` auf die CAN-Frames zu und führt Hilfsfunktionen für
+  Frame-Header und PCI ein.
+- **Patch 31** ergänzt die Socket-Option `CAN_ISOTP_XL_OPTS`, die
+  CAN-XL-Frame-Header, die SF-Längenkodierung für CAN XL und die Kapselung
+  der CiA SDTs 6/7/9.
+- **Patch 32** führt den N_PCI-Typ Multicast First Frame (MF) mit
+  `CAN_ISOTP_MF_BROADCAST` ein.
+
+Die Patches setzen auf Patch 26 auf. Anpassungen an den 7.4-Code und die
+Patches 1 bis 26:
+
+- Patch 29 übernimmt die Funktionen unverändert aus dem aktuellen
+  `isotp.c`, also mit `conf_lock` (Patch 4), der CF-Längenprüfung und dem
+  Empfangs-Timeout aus Patch 6, dem späten Lesen von `ae` und
+  `wait_tx_done` in `isotp_sendmsg()` (Patch 7), der memcg-Abrechnung
+  (Patch 11), der Prüfung von `CAN_ISOTP_OPTS` vor dem Kopieren
+  (Patch 12), `frame_txtime` in den Timeouts (Patch 13), den Fixes für
+  den Empfangspfad (Patch 14 bis 18) und den
+  7.4-Änderungen (`can_skb_uid` als Echo-Kennung,
+  `READ_ONCE(so->bound)`, Prüfung des CC/FD-Frame-Inhalts in
+  `isotp_rcv()`). `conf_lock` liegt seit Patch 28 mit in
+  `struct isotp_sock` in `isotp_defines.h`.
+- Ab Patch 30 steht die Prüfung des CC/FD-Frame-Inhalts
+  (`can_is_can_skb()` bzw. `can_is_canfd_skb()`) in
+  `isotp_check_frame_head()`; CAN-XL-Frames prüft dort
+  `can_is_canxl_skb()`. Patch 30 und 31 lesen in `isotp_sendmsg()` keine
+  Socket-Optionen vor der Belegung der Übertragung.
+- Patch 31 enthält die Prüfung getunnelter CC/FD-N_PDUs (SDT 6/7) in
+  `isotp_check_frame_head()` (bisher Patch 35 auf `split`) und stellt die
+  FF_DLmin-Prüfung aus Patch 16 auf `SF_PCI_SZ11` um.
+- `CAN_ISOTP_XL_OPTS` (Patch 31) folgt dem Schema der 7.4-Socket-Optionen:
+  `isotp_setsockopt()` kopiert den Wert vor `conf_lock` mit
+  Längenprüfung, `isotp_setsockopt_locked()` prüft ihn über einen Zeiger,
+  und `isotp_getsockopt()` liest ihn unter `conf_lock` in eine lokale
+  Kopie (Patch 10).
+- Hilfsfunktionen stehen in der `.c`-Datei, die sie nutzt. Die
+  tx_result/tx_gen-Funktionen (`isotp_inc_tx_gen()`,
+  `isotp_pack_tx_result()`, `isotp_get_tx_gen()`, `isotp_get_tx_err()`,
+  `isotp_get_tx_result()`, `isotp_tx_gen_done()`) sind `static` in
+  `protocoltx.c`. `isotp_set_tx_result()`, das auch `protocolrx.c` und
+  `hrtimer.c` aufrufen, ist dort eine normale Funktion mit Prototyp in
+  `isotp_protocol.h`.
+- In `isotp_protocol.h` bleiben nur die Einzeiler `isotp_sk()`,
+  `isotp_bc_flags()`, `fd_pdu()` (Patch 30) und `xl_encap()` (Patch 31),
+  die mehrere `.c`-Dateien nutzen. Sie sind `static inline`, da eine
+  `static`-Funktion im Header in jeder `.c`-Datei, die sie nicht nutzt,
+  `-Wunused-function` auslöst (mit `CONFIG_WERROR` ein Build-Fehler). In
+  `.c`-Dateien gibt es kein `inline`.
+- Patch 32 ergänzt `CAN_ISOTP_MF_BROADCAST` nur in `ISOTP_ALL_BC_FLAGS`;
+  die Prüfung auf ein einziges Broadcast-Flag aus Patch 12 deckt damit
+  alle drei Flags ab. Der ursprüngliche Zählblock mit `bcfl_num` in
+  `isotp_setsockopt_locked()` entfällt.
+
 ## Basis
 
 Die Patches wenden auf `main` dieses Repositorys an (CAN-Code aus
@@ -171,7 +243,7 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 26 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 32 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
 - `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 11 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
@@ -193,13 +265,19 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 26
+- Der Code nach Patch 32 ist identisch mit dem nach Patch 35 auf `split`
+  (bisherige Reihenfolge).
+- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 32
   fehler- und warnungsfrei (21.11.2026, `git am` auf Mainline
   `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
-  `net/can/isotp.o` wird in jedem Schritt neu übersetzt.
-- Patch 12 bis 26 sind in dieser Reihenfolge nicht zur Laufzeit getestet.
-  Die Fixes 14 bis 18 sind in der bisherigen Reihenfolge (`split`) mit
-  can-tests `functest/isotp` (Branch `isotp_ft`, Kernel
-  `7.4.0-rc3-xlisotp-00837`) ohne DEVIATION geprüft.
+  `net/can/isotp.o` bzw. ab Patch 29 die Dateien in `net/can/isotp/`
+  werden in jedem Schritt neu übersetzt.
+- Patch 12 bis 32 sind in dieser Reihenfolge nicht zur Laufzeit getestet.
+  Die Fixes 14 bis 18 und die SDT-6/7-Prüfung aus Patch 31 sind in der
+  bisherigen Reihenfolge (`split`) mit can-tests `functest/isotp` (Branch
+  `isotp_ft`, Kernel `7.4.0-rc3-xlisotp-00837`) ohne DEVIATION geprüft.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
-  den `Fixes:`-Zeilen bzw. Commit-Referenzen.
+  den `Fixes:`-Zeilen bzw. Commit-Referenzen, den MAINTAINERS-Hinweisen
+  bei den Dateiverschiebungen in Patch 27 bis 29 und (mit `--strict`)
+  einer Leerzeile nach `{` in `struct can_isotp_xl_options` in Patch 31
+  (Stand der bisherigen Reihenfolge).
