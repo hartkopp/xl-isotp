@@ -1,4 +1,4 @@
-From ddc96760d52aa415938e54a4fce1d2c23962383b Mon Sep 17 00:00:00 2001
+From 5568b14ad540878ab0aa7b1aafde6a92b856fc58 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 20:47:24 +0200
 Subject: [PATCH 32/32] can: isotp: add official support for 1-to-n multicast
@@ -66,10 +66,10 @@ index d2a111e..0f6e63f 100644
  /* Flow Status given in FC frame */
  #define ISOTP_FC_CTS 0		/* clear to send */
 diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
-index 1603f4b..4836861 100644
+index 083f73d..fd4d4ac 100644
 --- a/net/can/isotp/protocolrx.c
 +++ b/net/can/isotp/protocolrx.c
-@@ -609,6 +609,12 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+@@ -626,6 +626,12 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
  		}
  		break;
  
