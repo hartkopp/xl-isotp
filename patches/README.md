@@ -224,7 +224,9 @@ Patches 1 bis 26:
   `isotp_setsockopt()` kopiert den Wert vor `conf_lock` mit
   Längenprüfung, `isotp_setsockopt_locked()` prüft ihn über einen Zeiger,
   und `isotp_getsockopt()` liest ihn unter `conf_lock` in eine lokale
-  Kopie (Patch 10).
+  Kopie (Patch 10). `struct can_isotp_xl_options` hat am Ende drei
+  explizit reservierte Bytes (`__res[3]`) statt implizitem Padding; sie
+  müssen 0 sein (sonst `-EINVAL`) und bleiben für Erweiterungen frei.
 - Hilfsfunktionen stehen in der `.c`-Datei, die sie nutzt. Die
   tx_result/tx_gen-Funktionen (`isotp_inc_tx_gen()`,
   `isotp_pack_tx_result()`, `isotp_get_tx_gen()`, `isotp_get_tx_err()`,
@@ -284,7 +286,9 @@ dort identisch.
   `net/can/isotp.o` bzw. ab Patch 29 die Dateien in `net/can/isotp/`
   werden in jedem Schritt neu übersetzt. Die Padding-Regeln in Patch 31
   sind danach entstanden; der Endstand nach Patch 32 ist damit als Modul
-  übersetzt, die Zwischenstände 30 bis 32 nicht einzeln.
+  übersetzt, die Zwischenstände 30 bis 32 nicht einzeln. Die reservierten
+  Bytes in `struct can_isotp_xl_options` (Patch 31) sind danach
+  hinzugekommen und noch nicht übersetzt.
 - Der Endstand nach Patch 32 ist mit can-tests `functest/isotp` (Branch
   `isotp_ft`, `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
   bestehen ohne DEVIATION, offen sind nur die zwei netem-FINDINGs

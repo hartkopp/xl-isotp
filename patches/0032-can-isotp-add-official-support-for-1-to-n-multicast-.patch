@@ -1,4 +1,4 @@
-From c37c3e7132b3196bd2d1cd6b2f3fd7baa0498f22 Mon Sep 17 00:00:00 2001
+From ddc96760d52aa415938e54a4fce1d2c23962383b Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 20:47:24 +0200
 Subject: [PATCH 32/32] can: isotp: add official support for 1-to-n multicast
@@ -28,10 +28,10 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  4 files changed, 21 insertions(+), 5 deletions(-)
 
 diff --git a/include/uapi/linux/can/isotp.h b/include/uapi/linux/can/isotp.h
-index fd080d4..b0868ab 100644
+index 7103b2c..f03a2d6 100644
 --- a/include/uapi/linux/can/isotp.h
 +++ b/include/uapi/linux/can/isotp.h
-@@ -173,8 +173,9 @@ struct can_isotp_xl_options {
+@@ -175,8 +175,9 @@ struct can_isotp_xl_options {
  #define CAN_ISOTP_RX_EXT_ADDR	0x0200	/* different rx extended addressing */
  #define CAN_ISOTP_WAIT_TX_DONE	0x0400	/* wait for tx completion */
  #define CAN_ISOTP_SF_BROADCAST	0x0800	/* 1-to-N functional addressing */

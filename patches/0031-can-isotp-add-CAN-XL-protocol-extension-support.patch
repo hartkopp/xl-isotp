@@ -1,4 +1,4 @@
-From 73212136dcee09ffc5c978a38640ad82686574de Mon Sep 17 00:00:00 2001
+From adc3a2c8dda4d44e7da5550311c28ceb4014dbfb Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 12:26:22 +0200
 Subject: [PATCH 31/32] can: isotp: add CAN XL protocol extension support
@@ -16,16 +16,16 @@ No functional change for CAN CC/FD protocols.
 
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---
- include/uapi/linux/can/isotp.h |  37 +++++++++++
- net/can/isotp/isotp.c          | 115 +++++++++++++++++++++++++++++++++
+ include/uapi/linux/can/isotp.h |  39 +++++++++++
+ net/can/isotp/isotp.c          | 119 +++++++++++++++++++++++++++++++++
  net/can/isotp/isotp_defines.h  |  28 +++++++-
  net/can/isotp/isotp_protocol.h |   6 ++
- net/can/isotp/protocolrx.c     | 115 +++++++++++++++++++++++++--------
- net/can/isotp/protocoltx.c     |  69 +++++++++++++++-----
- 6 files changed, 325 insertions(+), 45 deletions(-)
+ net/can/isotp/protocolrx.c     | 115 +++++++++++++++++++++++--------
+ net/can/isotp/protocoltx.c     |  69 ++++++++++++++-----
+ 6 files changed, 331 insertions(+), 45 deletions(-)
 
 diff --git a/include/uapi/linux/can/isotp.h b/include/uapi/linux/can/isotp.h
-index 580d2ae..fd080d4 100644
+index 580d2ae..7103b2c 100644
 --- a/include/uapi/linux/can/isotp.h
 +++ b/include/uapi/linux/can/isotp.h
 @@ -67,6 +67,8 @@
@@ -37,7 +37,7 @@ index 580d2ae..fd080d4 100644
  struct can_isotp_options {
  
  	__u32 flags;		/* set flags for isotp behaviour.	*/
-@@ -122,6 +124,41 @@ struct can_isotp_ll_options {
+@@ -122,6 +124,43 @@ struct can_isotp_ll_options {
  				/* by the CAN netdriver configuration	*/
  };
  
@@ -69,6 +69,8 @@ index 580d2ae..fd080d4 100644
 +				/* at reception time (incoming)		*/
 +
 +	__u8	sdt_mode;	/* CAN CiA 611-1 SDT select (06/07/09)	*/
++
++	__u8	__res[3];	/* reserved, must be zero		*/
 +};
 +
 +/* CAN CiA 611-1 Service Data Unit Types for ISO 15765-2 or CC/FD tunneling */
@@ -80,7 +82,7 @@ index 580d2ae..fd080d4 100644
  
  #define CAN_ISOTP_LISTEN_MODE	0x0001	/* listen only (do not send FC) */
 diff --git a/net/can/isotp/isotp.c b/net/can/isotp/isotp.c
-index 49347f9..3f72f62 100644
+index 49347f9..aeb6a10 100644
 --- a/net/can/isotp/isotp.c
 +++ b/net/can/isotp/isotp.c
 @@ -222,6 +222,39 @@ static bool isotp_invalid_canid(canid_t canid)
@@ -152,12 +154,16 @@ index 49347f9..3f72f62 100644
  	if (!addr->can_ifindex)
  		return -ENODEV;
  
-@@ -455,6 +510,52 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+@@ -455,6 +510,56 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
  		break;
  	}
  
 +	case CAN_ISOTP_XL_OPTS: {
 +		const struct can_isotp_xl_options *xl = val;
++
++		/* reserved bytes must be zero (for future extensions) */
++		if (memchr_inv(xl->__res, 0, sizeof(xl->__res)))
++			return -EINVAL;
 +
 +		/* disable XL mode? */
 +		if (!(xl->tx_flags & CANXL_XLF)) {
@@ -205,7 +211,7 @@ index 49347f9..3f72f62 100644
  	default:
  		ret = -ENOPROTOOPT;
  	}
-@@ -472,6 +573,7 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
+@@ -472,6 +577,7 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
  		struct can_isotp_options opt;
  		struct can_isotp_fc_options rxfc;
  		struct can_isotp_ll_options ll;
@@ -213,7 +219,7 @@ index 49347f9..3f72f62 100644
  		u32 stmin;
  	} val;
  	unsigned int size;
-@@ -499,6 +601,10 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
+@@ -499,6 +605,10 @@ static int isotp_setsockopt(struct socket *sock, int level, int optname,
  		size = sizeof(val.ll);
  		break;
  
@@ -224,7 +230,7 @@ index 49347f9..3f72f62 100644
  	default:
  		return -ENOPROTOOPT;
  	}
-@@ -524,6 +630,7 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
+@@ -524,6 +634,7 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
  		struct can_isotp_options opt;
  		struct can_isotp_fc_options rxfc;
  		struct can_isotp_ll_options ll;
@@ -232,7 +238,7 @@ index 49347f9..3f72f62 100644
  		u32 stmin;
  	} val;
  	int len;
-@@ -567,6 +674,11 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
+@@ -567,6 +678,11 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
  		val.ll = so->ll;
  		break;
  
@@ -244,7 +250,7 @@ index 49347f9..3f72f62 100644
  	default:
  		err = -ENOPROTOOPT;
  	}
-@@ -704,6 +816,9 @@ static int isotp_init(struct sock *sk)
+@@ -704,6 +820,9 @@ static int isotp_init(struct sock *sk)
  	/* set ll_dl for tx path to similar place as for rx */
  	so->tx.ll_dl = so->ll.tx_dl;
  
