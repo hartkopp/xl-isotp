@@ -193,10 +193,13 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Patch 12 bis 26 sind in dieser Reihenfolge nicht übersetzt. In der
-  bisherigen Reihenfolge (`75_net_next`, `split`) waren die Aufräum-Patches
-  übersetzt, und die Fixes 14 bis 18 sind dort mit can-tests
-  `functest/isotp` (Branch `isotp_ft`, Kernel
+- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 26
+  fehler- und warnungsfrei (21.11.2026, `git am` auf Mainline
+  `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
+  `net/can/isotp.o` wird in jedem Schritt neu übersetzt.
+- Patch 12 bis 26 sind in dieser Reihenfolge nicht zur Laufzeit getestet.
+  Die Fixes 14 bis 18 sind in der bisherigen Reihenfolge (`split`) mit
+  can-tests `functest/isotp` (Branch `isotp_ft`, Kernel
   `7.4.0-rc3-xlisotp-00837`) ohne DEVIATION geprüft.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
   den `Fixes:`-Zeilen bzw. Commit-Referenzen.
