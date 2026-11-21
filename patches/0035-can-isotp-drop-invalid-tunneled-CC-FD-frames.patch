@@ -1,4 +1,4 @@
-From 25af2d043b7c91daa29d59bbf6debedd1117d5ba Mon Sep 17 00:00:00 2001
+From 90eb898994c0356b47c8604251164b6f2727527c Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 21:21:36 +0000
 Subject: [PATCH 35/35] can: isotp: drop invalid tunneled CC/FD frames
@@ -37,7 +37,7 @@ index 60e1559..0f6e63f 100644
  
  /* N_PCI type values in bits 7-4 of N_PCI bytes */
 diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
-index 2da3c69..649e5be 100644
+index 354dbaf..8fbc36f 100644
 --- a/net/can/isotp/protocolrx.c
 +++ b/net/can/isotp/protocolrx.c
 @@ -472,6 +472,29 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,

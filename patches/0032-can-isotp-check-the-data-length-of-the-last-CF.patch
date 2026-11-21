@@ -1,16 +1,17 @@
-From d4f306e259f9cd1347ff50518ba784af63adc34a Mon Sep 17 00:00:00 2001
+From adaea036442edb4ebab4241eef390a4221b72123 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:37 +0000
 Subject: [PATCH 32/35] can: isotp: check the data length of the last CF
 
-A CF shorter than LL_DL is only allowed as last CF. The check only
-tested whether the remaining PDU data would fit into a full CF. So a
-short CF with less than the remaining bytes was accepted and the
-reception continued with further CFs.
+A CF shorter than LL_DL is only allowed as last CF and therefore has to
+carry all missing bytes of the PDU. But the missing bytes were compared
+with the payload of a full CF. So a short CF without all missing bytes
+was accepted and the reception continued with further CFs.
 
-Require the short CF to contain all remaining bytes. Padding is still
-possible as it only increases datalen. isotp_rcv() ensures datalen >=
-ae + N_PCI_SZ, so the right side can not underflow.
+Drop a short CF when the missing PDU bytes exceed its possible payload
+(datalen - ae - N_PCI_SZ). Padding is still possible as it only
+increases datalen. isotp_rcv() ensures datalen >= ae + N_PCI_SZ, so
+the payload size can not underflow.
 
 Fixes: e057dd3fc20f ("can: add ISO 15765-2:2016 transport protocol")
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
@@ -19,7 +20,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
-index 794f2b9..4d9063f 100644
+index 794f2b9..ae5db66 100644
 --- a/net/can/isotp/protocolrx.c
 +++ b/net/can/isotp/protocolrx.c
 @@ -361,8 +361,10 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
@@ -28,8 +29,8 @@ index 794f2b9..4d9063f 100644
  	if (datalen < so->rx.ll_dl) {
 -		/* this is only allowed for the last CF */
 -		if (so->rx.len - so->rx.idx > so->rx.ll_dl - ae - N_PCI_SZ)
-+		/* only the last CF may be shorter: it has to contain
-+		 * all remaining bytes of the PDU (plus optional padding)
++		/* only the last CF may be shorter: drop it when the
++		 * missing PDU bytes exceed its possible payload
 +		 */
 +		if (so->rx.len - so->rx.idx > datalen - ae - N_PCI_SZ)
  			return;
