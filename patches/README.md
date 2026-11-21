@@ -235,6 +235,16 @@ Patches 1 bis 26:
 - Patch 31 enthält die Prüfung getunnelter CC/FD-N_PDUs (SDT 6/7) in
   `isotp_check_frame_head()` (bisher Patch 35 auf `split`) und stellt die
   FF_DLmin-Prüfung aus Patch 16 auf `SF_PCI_SZ11` um.
+- Patch 31 unterscheidet die N_PDU-Arten im XL-Modus nur über das FD-Flag
+  (`ll.mtu`) und das LL_DL (ISO 15765-2 Ed. 4, CAN XL ohne Padding):
+  CC-N_PDU (`CAN_MTU`, TX_DL = 8, optionales Padding), FD-N_PDU
+  (`CANFD_MTU`, FD-TX_DL, Padding wie bei CAN FD, auch mit SDT 9) und
+  XL-N_PDU (`CAN_MTU`, TX_DL > 8, kein Padding). `TX_PADDING` mit einer
+  XL-N_PDU lehnt `isotp_bind()` ab. Beim Empfang dekodiert eine FD-N_PDU
+  einen SF mit CAN_DL > 8 nur mit dem FD-Escape (N_PCI `0x00`), eine
+  XL-N_PDU nur mit dem XL-SF-Flag. FD-N_PDUs müssen auch mit SDT 9 eine
+  gültige FD-Länge haben, und XL-N_PDUs (LL_DL > 8) werden nicht auf
+  Padding geprüft.
 - `CAN_ISOTP_XL_OPTS` (Patch 31) folgt dem Schema der 7.4-Socket-Optionen:
   `isotp_setsockopt()` kopiert den Wert vor `conf_lock` mit
   Längenprüfung, `isotp_setsockopt_locked()` prüft ihn über einen Zeiger,
@@ -290,14 +300,15 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Der Code nach Patch 32 ist bis auf einen Kommentar in `isotp_rcv_ff()`
-  (Patch 30) identisch mit dem nach Patch 35 auf `split` (bisherige
-  Reihenfolge).
+- Der Code nach Patch 30 ist bis auf einen Kommentar in `isotp_rcv_ff()`
+  identisch mit dem Stand auf `split` (bisherige Reihenfolge). Patch 31
+  enthält zusätzlich die Padding-Regeln für die N_PDU-Arten im XL-Modus.
 - Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 32
   fehler- und warnungsfrei (21.11.2026, `git am` auf Mainline
   `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
   `net/can/isotp.o` bzw. ab Patch 29 die Dateien in `net/can/isotp/`
-  werden in jedem Schritt neu übersetzt.
+  werden in jedem Schritt neu übersetzt. Die Padding-Regeln in Patch 31
+  sind danach entstanden und noch nicht übersetzt.
 - Patch 12 bis 32 sind in dieser Reihenfolge nicht zur Laufzeit getestet.
   Die Fixes 14 bis 18 und die SDT-6/7-Prüfung aus Patch 31 sind in der
   bisherigen Reihenfolge (`split`) mit can-tests `functest/isotp` (Branch
