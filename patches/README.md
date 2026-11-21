@@ -212,7 +212,7 @@ Patches 1 bis 23:
 | 32 | can: isotp: check the data length of the last CF | `e057dd3fc20f` |
 | 33 | can: isotp: check the minimum FF_DL | - |
 | 34 | can: isotp: do not send FC.OVFLW in listen mode | `e057dd3fc20f` |
-| 35 | can: isotp: check the length of tunneled CC/FD frames | - |
+| 35 | can: isotp: drop invalid tunneled CC/FD frames | - |
 
 - **Patch 30**: FF_DL nahe 2^32 lief in der Single-FF-Prüfung über, der
   FF wurde ohne FC.OVFLW verworfen (Test RX-FF-011/-ae).
@@ -230,8 +230,9 @@ Patches 1 bis 23:
   abbrechen (Test RX-FF-006). Die Listen-Mode-Prüfung steht jetzt am
   Anfang von `isotp_send_fc()` statt bei den Aufrufern.
 - **Patch 35**: CAN XL mit SDT 6/7 nahm getunnelte CC/FD-N_PDUs mit
-  beliebiger XL-Länge an (Test XL-SDT6-001, XL-SDT7-002). Ohne Fixes-Tag;
-  soll beim Umsortieren in Patch 28 aufgehen.
+  beliebiger XL-Länge und mit den CiA-611-1-AF-Flags ZDLC (Bit 31) bzw.
+  RTR (Bit 30, SDT 6) an (Tests XL-SDT6-001, XL-SDT7-002, XL-HDR-004/007).
+  Ohne Fixes-Tag; soll beim Umsortieren in Patch 28 aufgehen.
 - Gefunden mit can-tests `functest/isotp` (Branch `isotp_ft`). Die Fixes
   sollen später an den Anfang der net-next-Patches (stable).
 

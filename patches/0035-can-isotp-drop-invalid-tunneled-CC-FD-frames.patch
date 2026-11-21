@@ -1,0 +1,75 @@
+From 25af2d043b7c91daa29d59bbf6debedd1117d5ba Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 21:21:36 +0000
+Subject: [PATCH 35/35] can: isotp: drop invalid tunneled CC/FD frames
+
+CAN XL frames with SDT 6 (CC tunnel) and SDT 7 (FD tunnel) carry CAN
+CC/FD N_PDUs but were accepted with any CAN XL data length. As the AF
+check ignores the bits 30/31 also tunneled frames with the CiA 611-1
+zero data length (ZDLC) or RTR (SDT 6) flag were processed. E.g. a
+SDT 6 socket received SF/FF/CF with more than 8 bytes.
+
+Drop tunneled frames with the ZDLC flag, SDT 6 frames with the RTR flag
+or more than 8 bytes and SDT 7 frames without a valid CAN FD data length.
+
+Sort the CiA 611-1 AF flag defines by bit position.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp/isotp_defines.h |  4 +++-
+ net/can/isotp/protocolrx.c    | 23 +++++++++++++++++++++++
+ 2 files changed, 26 insertions(+), 1 deletion(-)
+
+diff --git a/net/can/isotp/isotp_defines.h b/net/can/isotp/isotp_defines.h
+index 60e1559..0f6e63f 100644
+--- a/net/can/isotp/isotp_defines.h
++++ b/net/can/isotp/isotp_defines.h
+@@ -35,8 +35,10 @@
+ #define CANXL_FLAGS_MASK (CANXL_XLF | CANXL_RRS | CANXL_SEC)
+ 
+ /* CAN CiA 611-1 Acceptance Field flags for SDTs 06/07/09 addressing */
+-#define CAN_CIA_SDT_EFF  0x20000000U /* 29 bit ISO-TP address flag */
++#define CAN_CIA_SDT_ZDLC 0x80000000U /* Zero DLC flag (zero data length) */
++#define CAN_CIA_SDT6_RTR 0x40000000U /* RTR flag for SDT 06 CAN CC tunnel */
+ #define CAN_CIA_SDT7_BRS 0x40000000U /* BRS flag for SDT 07 CAN FD tunnel */
++#define CAN_CIA_SDT_EFF  0x20000000U /* 29 bit ISO-TP address flag */
+ #define CAN_CIA_ADDR_MASK (CAN_CIA_SDT_EFF | CAN_EFF_MASK) /* address only */
+ 
+ /* N_PCI type values in bits 7-4 of N_PCI bytes */
+diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
+index 2da3c69..649e5be 100644
+--- a/net/can/isotp/protocolrx.c
++++ b/net/can/isotp/protocolrx.c
+@@ -472,6 +472,29 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+ 		if ((vcid & CANXL_VCID_VAL_MASK) != so->xl.rx_vcid)
+ 			return NULL;
+ 
++		/* check unsafe tunneled CC/FD N_PDUs */
++		if (so->xl.sdt_mode == CAN_CIA_CC_TUNNEL_SDT) {
++			/* zero-data-length and RTR frames are not allowed */
++			if (cu->xl.af & (CAN_CIA_SDT_ZDLC | CAN_CIA_SDT6_RTR))
++				return NULL;
++
++			/* check for valid CAN CC data length */
++			if (cu->xl.len > CAN_MAX_DLEN)
++				return NULL;
++		}
++
++		if (so->xl.sdt_mode == CAN_CIA_FD_TUNNEL_SDT) {
++			/* zero-data-length frames are not allowed */
++			if (cu->xl.af & CAN_CIA_SDT_ZDLC)
++				return NULL;
++
++			/* check for valid CAN FD data length */
++			if (cu->xl.len > CAN_MAX_DLEN &&
++			    (cu->xl.len > CANFD_MAX_DLEN ||
++			     cu->xl.len != padlen(cu->xl.len)))
++				return NULL;
++		}
++
+ 		*datalen = cu->xl.len;
+ 
+ 		return (u8 *)&cu->xl.data;
+-- 
+2.43.0
+
