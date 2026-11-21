@@ -283,11 +283,14 @@ dort identisch.
   `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
   `net/can/isotp.o` bzw. ab Patch 29 die Dateien in `net/can/isotp/`
   werden in jedem Schritt neu übersetzt. Die Padding-Regeln in Patch 31
-  sind danach entstanden und noch nicht übersetzt.
-- Patch 12 bis 32 sind in dieser Reihenfolge nicht zur Laufzeit getestet.
-  Die Fixes 14 bis 18 und die SDT-6/7-Prüfung aus Patch 31 sind in der
-  bisherigen Reihenfolge (`split`) mit can-tests `functest/isotp` (Branch
-  `isotp_ft`, Kernel `7.4.0-rc3-xlisotp-00837`) ohne DEVIATION geprüft.
+  sind danach entstanden; der Endstand nach Patch 32 ist damit als Modul
+  übersetzt, die Zwischenstände 30 bis 32 nicht einzeln.
+- Der Endstand nach Patch 32 ist mit can-tests `functest/isotp` (Branch
+  `isotp_ft`, `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
+  bestehen ohne DEVIATION, offen sind nur die zwei netem-FINDINGs
+  (TIM-ECHO-006/007, Ursache `skb_orphan_partial()` in net/core). Kernel
+  `7.4.0-rc3-xlisotp-00837` mit nachgeladenem `can-isotp`-Modul aus
+  diesem Stand.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
   den `Fixes:`-Zeilen bzw. Commit-Referenzen, den MAINTAINERS-Hinweisen
   bei den Dateiverschiebungen in Patch 27 bis 29 und (mit `--strict`)
