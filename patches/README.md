@@ -290,7 +290,7 @@ dort identisch.
   Bytes in `struct can_isotp_xl_options` (Patch 31) sind danach
   hinzugekommen und noch nicht übersetzt.
 - Der Endstand nach Patch 32 ist mit can-tests `functest/isotp` (Branch
-  `isotp_ft`, `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
+  `isotp_ft`, `bc5b7b5`, vor dem Rebase `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
   bestehen ohne DEVIATION, offen sind nur die zwei netem-FINDINGs
   (TIM-ECHO-006/007, Ursache `skb_orphan_partial()` in net/core). Kernel
   `7.4.0-rc3-xlisotp-00837` mit nachgeladenem `can-isotp`-Modul aus
