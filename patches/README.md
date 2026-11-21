@@ -290,8 +290,9 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Der Code nach Patch 32 ist identisch mit dem nach Patch 35 auf `split`
-  (bisherige Reihenfolge).
+- Der Code nach Patch 32 ist bis auf einen Kommentar in `isotp_rcv_ff()`
+  (Patch 30) identisch mit dem nach Patch 35 auf `split` (bisherige
+  Reihenfolge).
 - Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 32
   fehler- und warnungsfrei (21.11.2026, `git am` auf Mainline
   `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
