@@ -1,7 +1,7 @@
-From 72dcec46ec420cd4111ade66d976c8f043caf845 Mon Sep 17 00:00:00 2001
+From b2283c118b172aa454807762333f98c9f063d94b Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:36:24 +0100
-Subject: [PATCH 28/28] can: isotp: introduce CAN_ISOTP_MIN_TX_DL
+Subject: [PATCH 29/29] can: isotp: introduce CAN_ISOTP_MIN_TX_DL
 
 The minimum TX_DL value is 8 and the CAN_MAX_DLEN is also 8.
 To not mix the intention and context of the defines introduce a separate
@@ -29,7 +29,7 @@ index bd99091..580d2ae 100644
  
  /*
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index fb89e20..d976f1e 100644
+index d93130f..10ddb48 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -404,7 +404,7 @@ static bool chk_optimized_fail(struct canfd_frame *cf, int start_index)
@@ -41,18 +41,18 @@ index fb89e20..d976f1e 100644
  		return (cf->len != start_index);
  
  	/* This relation is also valid in the non-linear DLC range, where
-@@ -618,8 +618,8 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+@@ -617,8 +617,8 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  	}
  
  	/* the PDU must not fit into a SF (FF_DLmin) */
--	if (so->rx.ll_dl == CAN_MAX_DLEN)
+-	if (ll_dl == CAN_MAX_DLEN)
 -		sf_max = CAN_MAX_DLEN - SF_PCI_SZ4 - ae;
-+	if (so->rx.ll_dl == CAN_ISOTP_MIN_TX_DL)
++	if (ll_dl == CAN_ISOTP_MIN_TX_DL)
 +		sf_max = CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae;
  	else
- 		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
+ 		sf_max = ll_dl - SF_PCI_SZ8 - ae;
  
-@@ -1230,7 +1230,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1236,7 +1236,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  	}
  
  	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
@@ -61,7 +61,7 @@ index fb89e20..d976f1e 100644
  
  	/* does the given data fit into a single frame for SF_BROADCAST? */
  	if ((isotp_bc_flags(so) == CAN_ISOTP_SF_BROADCAST) &&
-@@ -1291,7 +1291,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1297,7 +1297,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  		 * This prevents a protocol caused length extension from
  		 * CAN_DL = 8 to CAN_DL = 12 due to the SF_SL ESC handling.
  		 */

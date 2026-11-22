@@ -1,7 +1,7 @@
 From 509afe1c00361ee55fc1ea4193fbccae6ae7a8e1 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 11:56:13 +0000
-Subject: [PATCH 15/28] can: isotp: reject reserved STmin values in
+Subject: [PATCH 15/29] can: isotp: reject reserved STmin values in
  CAN_ISOTP_RECV_FC
 
 The STmin value of struct can_isotp_fc_options is sent in the flow

@@ -1,7 +1,7 @@
-From 147778d150b202a3725a29f9e1d55290f6d135fb Mon Sep 17 00:00:00 2001
+From bc80b1a202abf8b0b4e6ed4cbc6d71e63e213d25 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 18:52:37 +0100
-Subject: [PATCH 25/28] can: isotp: rename checkpad functions returning bool
+Subject: [PATCH 26/29] can: isotp: rename checkpad functions returning bool
  values
 
 The checkpad functions return true when failing. Rename the functions
@@ -14,7 +14,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 14 insertions(+), 13 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 403ac59..cab789a 100644
+index 904f9d8..1922eba 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -395,8 +395,8 @@ static u8 padlen(u8 datalen)
@@ -80,8 +80,8 @@ index 403ac59..cab789a 100644
  		/* malformed PDU - report 'not a data message' */
  		sk->sk_err = EBADMSG;
  		if (!sock_flag(sk, SOCK_DEAD))
-@@ -556,7 +557,7 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
- 		return 1;
+@@ -558,7 +559,7 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
+ 	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
  
  	if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
 -	    check_pad(so, cf, pcilen + len, so->opt.rxpad_content)) {
@@ -89,7 +89,7 @@ index 403ac59..cab789a 100644
  		/* malformed PDU - report 'not a data message' */
  		sk->sk_err = EBADMSG;
  		if (!sock_flag(sk, SOCK_DEAD))
-@@ -726,7 +727,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -732,7 +733,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  		WRITE_ONCE(so->rx.state, ISOTP_IDLE);
  
  		if ((so->opt.flags & ISOTP_CHECK_PADDING) &&

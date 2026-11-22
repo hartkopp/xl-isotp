@@ -1,7 +1,7 @@
 From 704c0773a09e8a99ef4d63ebb7a7cce67770015e Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:37 +0000
-Subject: [PATCH 19/28] can: isotp: check the data length of the last CF
+Subject: [PATCH 19/29] can: isotp: check the data length of the last CF
 
 A CF shorter than LL_DL is only allowed as last CF and therefore has to
 carry all missing bytes of the PDU. But the missing bytes were compared

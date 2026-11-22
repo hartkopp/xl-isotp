@@ -1,7 +1,7 @@
 From a9e5ed14a34e8fb0199c87f600abc34dbf33f6ba Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 29 Dec 2025 21:12:20 +0100
-Subject: [PATCH 17/28] can: isotp: drop FF frames with invalid length
+Subject: [PATCH 17/29] can: isotp: drop FF frames with invalid length
  extension
 
 The FF data length usually consists of 12 bits for values up to 4095 byte.

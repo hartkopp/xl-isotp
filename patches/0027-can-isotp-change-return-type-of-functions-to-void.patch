@@ -1,7 +1,7 @@
-From 841c990c4938bd95a3fb123d51ea7eca718992c6 Mon Sep 17 00:00:00 2001
+From 242edf42851d6ea7cd44043765c5e9069818435a Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 13 Feb 2026 13:41:26 +0100
-Subject: [PATCH 26/28] can: isotp: change return type of functions to void
+Subject: [PATCH 27/29] can: isotp: change return type of functions to void
 
 The return values of some functions have never been used and needed.
 Make those functions void to remove unused return values.
@@ -12,7 +12,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 41 insertions(+), 36 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index cab789a..5947cdc 100644
+index 1922eba..5d91e65 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -286,7 +286,7 @@ static enum hrtimer_restart isotp_rx_timer_handler(struct hrtimer *hrtimer)
@@ -96,7 +96,7 @@ index cab789a..5947cdc 100644
  	}
  
  	/* get static/dynamic communication params from first/every FC frame */
-@@ -541,11 +542,12 @@ static int isotp_rcv_fc(struct isotp_sock *so, struct canfd_frame *cf, int ae)
+@@ -541,18 +542,19 @@ static int isotp_rcv_fc(struct isotp_sock *so, struct canfd_frame *cf, int ae)
  		smp_store_release(&so->tx.state, ISOTP_IDLE);
  		wake_up_interruptible(&so->wait);
  	}
@@ -112,16 +112,15 @@ index cab789a..5947cdc 100644
  {
  	struct isotp_sock *so = isotp_sk(sk);
  	struct sk_buff *nskb;
-@@ -554,7 +556,7 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
- 	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
  
+ 	/* ignore invalid SFs (ongoing reception is not affected) */
  	if (!len || len > cf->len - pcilen)
 -		return 1;
 +		return;
  
- 	if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
- 	    chk_pad_fail(so, cf, pcilen + len, so->opt.rxpad_content)) {
-@@ -562,22 +564,23 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
+ 	/* terminate a potentially ongoing reception */
+ 	hrtimer_cancel(&so->rxtimer);
+@@ -564,22 +566,23 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
  		sk->sk_err = EBADMSG;
  		if (!sock_flag(sk, SOCK_DEAD))
  			sk_error_report(sk);
@@ -148,35 +147,35 @@ index cab789a..5947cdc 100644
 +static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  {
  	struct isotp_sock *so = isotp_sk(sk);
- 	unsigned int sf_max;
-@@ -592,7 +595,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 	unsigned int ll_dl, len, sf_max;
+@@ -591,7 +594,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  
  	/* the first frame has to use the entire frame up to LL_DL length */
- 	if (cf->len != so->rx.ll_dl)
+ 	if (cf->len != ll_dl)
 -		return 1;
 +		return;
  
  	/* get the FF_DL */
- 	so->rx.len = (cf->data[ae] & 0x0F) << 8;
-@@ -611,7 +614,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 	len = (cf->data[ae] & 0x0F) << 8;
+@@ -610,7 +613,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  
  		/* unneeded escape sequence => ignore PDU according to spec */
- 		if (so->rx.len <= MAX_12BIT_PDU_SIZE)
+ 		if (len <= MAX_12BIT_PDU_SIZE)
 -			return 1;
 +			return;
  	}
  
  	/* the PDU must not fit into a SF (FF_DLmin) */
-@@ -621,7 +624,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
- 		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
+@@ -620,7 +623,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 		sf_max = ll_dl - SF_PCI_SZ8 - ae;
  
- 	if (so->rx.len <= sf_max)
+ 	if (len <= sf_max)
 -		return 1;
 +		return;
  
- 	/* PDU size > default => try max_pdu_size
- 	 *
-@@ -641,7 +644,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 	/* valid FF => terminate a potentially ongoing reception */
+ 	hrtimer_cancel(&so->rxtimer);
+@@ -647,7 +650,7 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  	if (so->rx.len > so->rx.buflen) {
  		/* send FC frame with overflow status */
  		isotp_send_fc(sk, ae, ISOTP_FC_OVFLW);
@@ -185,7 +184,7 @@ index cab789a..5947cdc 100644
  	}
  
  	/* copy the first received data bytes */
-@@ -659,11 +662,12 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+@@ -665,11 +668,12 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  
  	/* send our first FC frame */
  	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
@@ -201,7 +200,7 @@ index cab789a..5947cdc 100644
  {
  	struct isotp_sock *so = isotp_sk(sk);
  	struct sk_buff *nskb;
-@@ -671,7 +675,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -677,7 +681,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  
  	/* CFs are never longer than the FF */
  	if (cf->len > so->rx.ll_dl)
@@ -210,7 +209,7 @@ index cab789a..5947cdc 100644
  
  	/* CFs have usually the LL_DL length */
  	if (cf->len < so->rx.ll_dl) {
-@@ -679,17 +683,17 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -685,17 +689,17 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  		 * missing PDU bytes exceed its possible payload
  		 */
  		if (so->rx.len - so->rx.idx > cf->len - ae - N_PCI_SZ)
@@ -231,7 +230,7 @@ index cab789a..5947cdc 100644
  
  		so->lastrxcf_tstamp = skb->tstamp;
  	}
-@@ -701,7 +705,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -707,7 +711,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  	 * while hrtimer_cancel() above waited for it to finish => recheck
  	 */
  	if (READ_ONCE(so->rx.state) != ISOTP_WAIT_DATA)
@@ -240,7 +239,7 @@ index cab789a..5947cdc 100644
  
  	if ((cf->data[ae] & 0x0F) != so->rx.sn) {
  		/* wrong sn detected - report 'illegal byte sequence' */
-@@ -711,7 +715,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -717,7 +721,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  
  		/* reset rx state */
  		WRITE_ONCE(so->rx.state, ISOTP_IDLE);
@@ -249,7 +248,7 @@ index cab789a..5947cdc 100644
  	}
  	so->rx.sn++;
  	so->rx.sn %= 16;
-@@ -732,12 +736,12 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -738,12 +742,12 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  			sk->sk_err = EBADMSG;
  			if (!sock_flag(sk, SOCK_DEAD))
  				sk_error_report(sk);
@@ -264,7 +263,7 @@ index cab789a..5947cdc 100644
  
  		memcpy(skb_put(nskb, so->rx.len), so->rx.buf,
  		       so->rx.len);
-@@ -745,7 +749,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -751,7 +755,7 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  		nskb->tstamp = skb->tstamp;
  		nskb->dev = skb->dev;
  		isotp_rcv_skb(nskb, sk);
@@ -273,7 +272,7 @@ index cab789a..5947cdc 100644
  	}
  
  	/* start rx timeout, isotp_send_fc() restarts it */
-@@ -754,11 +758,12 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+@@ -760,11 +764,12 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
  
  	/* perform blocksize handling, if enabled */
  	if (!so->rxfc.bs || ++so->rx.bs < so->rxfc.bs)

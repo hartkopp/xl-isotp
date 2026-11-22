@@ -1,7 +1,7 @@
-From de2a7a76a26e4e31aaf5a352a18f89e6d23a4ec5 Mon Sep 17 00:00:00 2001
+From 5b27bbeafce39962597ba086d9714ae2677c1ec6 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 13 Jul 2026 14:23:43 +0200
-Subject: [PATCH 22/28] can: isotp: rename rx_lock as is has become state
+Subject: [PATCH 23/29] can: isotp: rename rx_lock as is has become state
  machine lock
 
 rx_lock has been used to lock some receive path functionalities.
@@ -14,7 +14,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 26 insertions(+), 26 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 9f62662..e257f0c 100644
+index 29d94a8..592d5d8 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -182,7 +182,7 @@ struct isotp_sock {
@@ -26,7 +26,7 @@ index 9f62662..e257f0c 100644
  	struct mutex conf_lock; /* protects bind and sockopts */
  };
  
-@@ -798,7 +798,7 @@ static void isotp_rcv(struct sk_buff *skb, void *data)
+@@ -804,7 +804,7 @@ static void isotp_rcv(struct sk_buff *skb, void *data)
  	 * CAN frame reception time. This locking is not needed in real world
  	 * use cases but the inconsistency can be triggered with syzkaller.
  	 */
@@ -35,7 +35,7 @@ index 9f62662..e257f0c 100644
  
  	if (so->opt.flags & CAN_ISOTP_HALF_DUPLEX) {
  		/* check rx/tx path half duplex expectations */
-@@ -857,7 +857,7 @@ static void isotp_rcv(struct sk_buff *skb, void *data)
+@@ -863,7 +863,7 @@ static void isotp_rcv(struct sk_buff *skb, void *data)
  	}
  
  out_unlock:
@@ -44,7 +44,7 @@ index 9f62662..e257f0c 100644
  }
  
  static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
-@@ -1009,10 +1009,10 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
+@@ -1015,10 +1015,10 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
  	if (WARN_ON_ONCE(!csx))
  		return;
  
@@ -57,7 +57,7 @@ index 9f62662..e257f0c 100644
  
  	/* so->cfecho may since belong to a new transfer; recheck under lock */
  	if (READ_ONCE(so->cfecho) != csx->can_skb_uid)
-@@ -1024,7 +1024,7 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
+@@ -1030,7 +1030,7 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
  	/* local echo skb with consecutive frame has been consumed */
  	WRITE_ONCE(so->cfecho, 0);
  
@@ -66,7 +66,7 @@ index 9f62662..e257f0c 100644
  	 * is enough: so->tx.state can't have flipped to ISOTP_SENDING for
  	 * a new claim while we're still in here
  	 */
-@@ -1062,13 +1062,13 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
+@@ -1068,13 +1068,13 @@ static void isotp_rcv_echo(struct sk_buff *skb, void *data)
  	hrtimer_start(&so->txfrtimer, so->tx_gap, HRTIMER_MODE_REL_SOFT);
  
  out_unlock:
@@ -82,7 +82,7 @@ index 9f62662..e257f0c 100644
   *
   * tx.state is acquired before tx_gen. Common sequence in isotp_tx_gen_done().
   * cmpxchg() only orders itself, not the two preceding loads.
-@@ -1157,15 +1157,15 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1163,15 +1163,15 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  	if (!READ_ONCE(so->bound) || READ_ONCE(so->tx.state) == ISOTP_SHUTDOWN)
  		return -EADDRNOTAVAIL;
  
@@ -101,7 +101,7 @@ index 9f62662..e257f0c 100644
  
  		/* we do not support multiple buffers - for now */
  		if (msg->msg_flags & MSG_DONTWAIT)
-@@ -1194,7 +1194,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1200,7 +1200,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  	smp_wmb(); /* see smp_load_acquire() in isotp_tx_[timeout|gen_done] */
  	WRITE_ONCE(so->tx.state, ISOTP_SENDING);
  	WRITE_ONCE(so->cfecho, 0);
@@ -110,7 +110,7 @@ index 9f62662..e257f0c 100644
  
  	/* so->bound is only checked once above - a wakeup may have
  	 * unbound/rebound the socket meanwhile => recheck
-@@ -1331,12 +1331,12 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1337,12 +1337,12 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  		}
  	}
  
@@ -125,7 +125,7 @@ index 9f62662..e257f0c 100644
  		kfree_skb(skb);
  		dev_put(dev);
  		wake_up_interruptible(&so->wait);
-@@ -1346,7 +1346,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1352,7 +1352,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  	WRITE_ONCE(so->tx.state, new_state);
  	hrtimer_start(tx_hrt, ktime_set(hrtimer_sec, so->frame_txtime),
  		      HRTIMER_MODE_REL_SOFT);
@@ -134,7 +134,7 @@ index 9f62662..e257f0c 100644
  
  	/* send the first or only CAN frame */
  	cf->flags = so->ll.tx_flags;
-@@ -1359,14 +1359,14 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1365,14 +1365,14 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  		pr_notice_once("can-isotp: %s: can_send_ret %pe\n",
  			       __func__, ERR_PTR(err));
  
@@ -151,7 +151,7 @@ index 9f62662..e257f0c 100644
  			return err;
  		}
  
-@@ -1409,16 +1409,16 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1415,16 +1415,16 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  
  err_out_drop:
  	/* claimed but nothing sent yet - no timer to cancel */
@@ -171,7 +171,7 @@ index 9f62662..e257f0c 100644
  		return err;
  	}
  
-@@ -1426,13 +1426,13 @@ err_event_drop:
+@@ -1432,13 +1432,13 @@ err_event_drop:
  	hrtimer_cancel(&so->txtimer);
  	hrtimer_cancel(&so->echotimer);
  err_out_drop_locked:
@@ -187,7 +187,7 @@ index 9f62662..e257f0c 100644
  	wake_up_interruptible(&so->wait);
  
  	return err;
-@@ -1502,13 +1502,13 @@ static int isotp_release(struct socket *sock)
+@@ -1508,13 +1508,13 @@ static int isotp_release(struct socket *sock)
  					READ_ONCE(so->tx.state) == ISOTP_IDLE) == 0)
  		;
  
@@ -204,7 +204,7 @@ index 9f62662..e257f0c 100644
  	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
  
  	/* forced SHUTDOWN may have skipped IDLE (gave up on a signal) */
-@@ -2096,7 +2096,7 @@ static int isotp_init(struct sock *sk)
+@@ -2102,7 +2102,7 @@ static int isotp_init(struct sock *sk)
  		      CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
  
  	init_waitqueue_head(&so->wait);

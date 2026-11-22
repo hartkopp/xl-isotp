@@ -1,7 +1,7 @@
-From 2e9fdf5e3e39c16ba54b31fdb0e2b2435974e5cf Mon Sep 17 00:00:00 2001
+From c14bbea9d295bd43edcfb2da9ba6f38729384c22 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 18:47:54 +0100
-Subject: [PATCH 24/28] can: isotp: rename variable for the required content
+Subject: [PATCH 25/29] can: isotp: rename variable for the required content
  length
 
 Rename the meaningless 'num' variable to 'reqlen' to simplify the review
@@ -13,10 +13,10 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 0ecf59c..403ac59 100644
+index 3e55bcb..904f9d8 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
-@@ -865,13 +865,13 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
+@@ -871,13 +871,13 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
  {
  	int pcilen = N_PCI_SZ + ae + off;
  	int space = so->tx.ll_dl - pcilen;
@@ -33,7 +33,7 @@ index 0ecf59c..403ac59 100644
  		if (so->opt.flags & CAN_ISOTP_TX_PADDING) {
  			/* user requested padding */
  			cf->len = padlen(cf->len);
-@@ -884,7 +884,7 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
+@@ -890,7 +890,7 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,
  		}
  	}
  
