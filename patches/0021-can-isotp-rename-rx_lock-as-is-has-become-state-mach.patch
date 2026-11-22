@@ -1,7 +1,7 @@
-From d9c3a05539a16dbb8b8a65e54fd6d404914adc78 Mon Sep 17 00:00:00 2001
+From 8a41bb69a9559cb28c9c5b545a7429599c9d8fed Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 13 Jul 2026 14:23:43 +0200
-Subject: [PATCH 20/26] can: isotp: rename rx_lock as is has become state
+Subject: [PATCH 21/27] can: isotp: rename rx_lock as is has become state
  machine lock
 
 rx_lock has been used to lock some receive path functionalities.
@@ -14,7 +14,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 26 insertions(+), 26 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 2d8f0b3..144b4cc 100644
+index f6e6b81..c4da820 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -182,7 +182,7 @@ struct isotp_sock {
@@ -204,7 +204,7 @@ index 2d8f0b3..144b4cc 100644
  	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
  
  	/* forced SHUTDOWN may have skipped IDLE (gave up on a signal) */
-@@ -2083,7 +2083,7 @@ static int isotp_init(struct sock *sk)
+@@ -2088,7 +2088,7 @@ static int isotp_init(struct sock *sk)
  		      CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
  
  	init_waitqueue_head(&so->wait);

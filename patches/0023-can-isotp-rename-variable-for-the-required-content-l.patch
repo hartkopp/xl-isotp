@@ -1,7 +1,7 @@
-From f364098be2b28d1fa03cde74e52f7e4635b66a0c Mon Sep 17 00:00:00 2001
+From 00c8cd24e05c37993563483e52ba2fec46115d6a Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 18:47:54 +0100
-Subject: [PATCH 22/26] can: isotp: rename variable for the required content
+Subject: [PATCH 23/27] can: isotp: rename variable for the required content
  length
 
 Rename the meaningless 'num' variable to 'reqlen' to simplify the review
@@ -13,7 +13,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 8bd5935..6ad095a 100644
+index 077c2a1..0a38cd0 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -865,13 +865,13 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,

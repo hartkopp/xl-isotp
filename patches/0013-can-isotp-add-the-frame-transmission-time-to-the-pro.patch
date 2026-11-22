@@ -1,7 +1,7 @@
 From 2919cb63fdd2211e0cd133bb01bb845826257e5b Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 13:13:51 +0000
-Subject: [PATCH 13/26] can: isotp: add the frame transmission time to the
+Subject: [PATCH 13/27] can: isotp: add the frame transmission time to the
  protocol timeouts
 
 The frame_txtime element of struct can_isotp_options is documented as

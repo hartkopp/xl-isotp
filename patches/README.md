@@ -79,7 +79,7 @@ Changelog-Notizen unter dem `---` sind übernommen. Der Patch wird erst
 verschickt, wenn die Fixes in net-next angekommen sind; Changelog und
 Links sind dann anzupassen.
 
-## Patches 12 bis 26: CAN_ISOTP für net-next (Fixes und Aufräum-Patches)
+## Patches 12 bis 27: CAN_ISOTP für net-next (Fixes und Aufräum-Patches)
 
 Reihenfolge: erst die Fixes, dann die Aufräum-Patches. Keiner der Patches
 hat einen `Fixes:`-Tag, keiner ist für stable vorgesehen.
@@ -89,21 +89,22 @@ hat einen `Fixes:`-Tag, keiner ist für stable vorgesehen.
 | | **Fixes (API)** | |
 | 12 | can: isotp: check the CAN_ISOTP_OPTS values before applying them | 22 |
 | 13 | can: isotp: add the frame transmission time to the protocol timeouts | 23 |
+| 14 | can: isotp: check the CAN FD tx_flags in CAN_ISOTP_LL_OPTS | neu |
 | | **Fixes (Empfangspfad)** | |
-| 14 | can: isotp: drop frames without N_PCI | 31 |
-| 15 | can: isotp: drop FF frames with invalid length extension | 12 |
-| 16 | can: isotp: check the minimum FF_DL | 13 + 30 + 33 |
-| 17 | can: isotp: check the data length of the last CF | 32 |
-| 18 | can: isotp: do not send FC.OVFLW in listen mode | 34 |
+| 15 | can: isotp: drop frames without N_PCI | 31 |
+| 16 | can: isotp: drop FF frames with invalid length extension | 12 |
+| 17 | can: isotp: check the minimum FF_DL | 13 + 30 + 33 |
+| 18 | can: isotp: check the data length of the last CF | 32 |
+| 19 | can: isotp: do not send FC.OVFLW in listen mode | 34 |
 | | **Aufräum-Patches** | |
-| 19 | can: isotp: drop inline keyword, let the compiler decide | 14 |
-| 20 | can: isotp: rename rx_lock as is has become state machine lock | 15 |
-| 21 | can: isotp: introduce isotp_invalid_canid() to verify proper CAN-IDs | 16 |
-| 22 | can: isotp: rename variable for the required content length | 17 |
-| 23 | can: isotp: rename checkpad functions returning bool values | 18 |
-| 24 | can: isotp: change return type of functions to void | 19 |
-| 25 | can: isotp: rename pointer in isotp_rcv() prototype | 20 |
-| 26 | can: isotp: introduce CAN_ISOTP_MIN_TX_DL | 21 |
+| 20 | can: isotp: drop inline keyword, let the compiler decide | 14 |
+| 21 | can: isotp: rename rx_lock as is has become state machine lock | 15 |
+| 22 | can: isotp: introduce isotp_invalid_canid() to verify proper CAN-IDs | 16 |
+| 23 | can: isotp: rename variable for the required content length | 17 |
+| 24 | can: isotp: rename checkpad functions returning bool values | 18 |
+| 25 | can: isotp: change return type of functions to void | 19 |
+| 26 | can: isotp: rename pointer in isotp_rcv() prototype | 20 |
+| 27 | can: isotp: introduce CAN_ISOTP_MIN_TX_DL | 21 |
 
 - **Patch 12** prüft die Werte von `CAN_ISOTP_OPTS` in der Kopie, die
   `isotp_setsockopt()` vor `conf_lock` anlegt, bevor sie nach `so->opt`
@@ -119,28 +120,33 @@ hat einen `Fixes:`-Tag, keiner ist für stable vorgesehen.
   bleiben ohne `frame_txtime`, da das Echo lokal ist. Anlass ist die
   Diskussion zu Wentian Yes N_Ar-Patch (`Reported-by`, `Closes:` auf
   `eb5e9618-3dbf-42cb-a635-752ff9fbcb99@hartkopp.net`).
-- **Patch 14** verwirft Frames mit CAN_DL < AE + N_PCI, die bisher mit
+- **Patch 14** erlaubt in den `tx_flags` von `CAN_ISOTP_LL_OPTS` für CAN
+  FD nur noch `CANFD_BRS` und `CANFD_FDF` (das der CAN-Core ohnehin
+  setzt). `CANFD_ESI` (erzeugt der sendende Controller) und undefinierte
+  Bits lehnt er mit `-EINVAL` ab; bisher wurden sie so in die CAN-FD-Frames
+  übernommen (can-tests API-OPT-010, TX-FL-001).
+- **Patch 15** verwirft Frames mit CAN_DL < AE + N_PCI, die bisher mit
   Daten jenseits von CAN_DL als SF/CF/FC verarbeitet wurden (can-tests
   RX-SF-003..005, RX-CF-006).
-- **Patch 15** verwirft First Frames mit unnötiger 32-Bit-Längenangabe
+- **Patch 16** verwirft First Frames mit unnötiger 32-Bit-Längenangabe
   (FF_DL <= 4095), wie ISO 15765-2:2016 es verlangt.
-- **Patch 16** prüft FF_DL gegen FF_DLmin: Eine PDU, die in einen SF
+- **Patch 17** prüft FF_DL gegen FF_DLmin: Eine PDU, die in einen SF
   passt, wird nicht als FF angenommen (bisher z.B. FF_DL 7 bei LL_DL 8,
   RX-FF-004-CC8/-ae). Er entfernt die nur auf der Sendeseite nötige
   SF_DL-ESC-Offsetberechnung auf der Empfangsseite (bisher Patch 13). Da
   nur FF_DL links steht, läuft die Prüfung für FF_DL nahe 2^32 nicht über
   (bisher Patch 30, RX-FF-011/-ae).
-- **Patch 17** verwirft einen kurzen CF, wenn die fehlenden Bytes der PDU
-  seine mögliche Nutzlast übersteigen (RX-CF-014/015). Setzt Patch 14
+- **Patch 18** verwirft einen kurzen CF, wenn die fehlenden Bytes der PDU
+  seine mögliche Nutzlast übersteigen (RX-CF-014/015). Setzt Patch 15
   voraus.
-- **Patch 18** verlegt die Listen-Mode-Prüfung an den Anfang von
+- **Patch 19** verlegt die Listen-Mode-Prüfung an den Anfang von
   `isotp_send_fc()`. Bisher sendete ein Socket im Listen-Mode FC.OVFLW,
   wenn FF_DL den Empfangspuffer übersteigt (RX-FF-006).
-- **Patch 19** entfernt das `inline` bei `isotp_sk()`.
-- **Patch 20** benennt `rx_lock` in `sm_lock` um, da der Spinlock die
+- **Patch 20** entfernt das `inline` bei `isotp_sk()`.
+- **Patch 21** benennt `rx_lock` in `sm_lock` um, da der Spinlock die
   ganze Zustandsmaschine schützt. Der Mutex `conf_lock` aus Patch 4 bleibt
   unverändert.
-- **Patch 21 bis 26** sind Aufräum-Patches ohne funktionale Änderung:
+- **Patch 22 bis 27** sind Aufräum-Patches ohne funktionale Änderung:
   gemeinsame CAN-ID-Prüfung in `isotp_bind()`, `num` heißt `reqlen`,
   `chk_pad_fail()`/`chk_optimized_fail()` liefern `bool`, `void` statt
   ungenutzter Rückgabewerte von `isotp_send_fc()` und `isotp_rcv_*()`,
@@ -150,15 +156,15 @@ hat einen `Fixes:`-Tag, keiner ist für stable vorgesehen.
 Die Patches setzen auf Patch 11 auf. Anpassungen gegenüber `75_net_next`
 und `split`:
 
-- Patch 14, 16, 17 und 18 sind auf `net/can/isotp.c` vor der Aufteilung
+- Patch 15, 17, 18 und 19 sind auf `net/can/isotp.c` vor der Aufteilung
   zurückportiert (`cf->len` statt `datalen`, `return 1`/`return 0` bis
-  Patch 24).
-- Patch 16 nutzt `CAN_MAX_DLEN` und `SF_PCI_SZ8`; Patch 26 stellt auf
-  `CAN_ISOTP_MIN_TX_DL` um, der CAN-XL-Patch 31 auf `SF_PCI_SZ11`.
-- Patch 18 entfernt die Listen-Mode-Prüfungen in `isotp_rcv_ff()` und
-  `isotp_rcv_cf()`; Patch 24 enthält sie daher nicht mehr.
+  Patch 25).
+- Patch 17 nutzt `CAN_MAX_DLEN` und `SF_PCI_SZ8`; Patch 27 stellt auf
+  `CAN_ISOTP_MIN_TX_DL` um, der CAN-XL-Patch 32 auf `SF_PCI_SZ11`.
+- Patch 19 entfernt die Listen-Mode-Prüfungen in `isotp_rcv_ff()` und
+  `isotp_rcv_cf()`; Patch 25 enthält sie daher nicht mehr.
 - In `isotp_rcv_cf()` prüft Patch 6 die CF-Länge als Erstes und startet
-  den Empfangs-Timeout schon vor der Blocksize-Prüfung. Patch 24 behält
+  den Empfangs-Timeout schon vor der Blocksize-Prüfung. Patch 25 behält
   beides bei und entfernt nur die Rückgabewerte.
 
 ## Basis
@@ -171,7 +177,7 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 26 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 27 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
 - `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 11 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
@@ -193,12 +199,13 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 26
+- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 27
   fehler- und warnungsfrei (21.11.2026, `git am` auf Mainline
   `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
-  `net/can/isotp.o` wird in jedem Schritt neu übersetzt.
-- Patch 12 bis 26 sind in dieser Reihenfolge nicht zur Laufzeit getestet.
-  Die Fixes 14 bis 18 sind in der bisherigen Reihenfolge (`split`) mit
+  `net/can/isotp.o` wird in jedem Schritt neu übersetzt. Patch 14 ist
+  danach eingefügt worden und noch nicht übersetzt.
+- Patch 12 bis 27 sind in dieser Reihenfolge nicht zur Laufzeit getestet.
+  Die Fixes 15 bis 19 sind in der bisherigen Reihenfolge (`split`) mit
   can-tests `functest/isotp` (Branch `isotp_ft`, Kernel
   `7.4.0-rc3-xlisotp-00837`) ohne DEVIATION geprüft.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
