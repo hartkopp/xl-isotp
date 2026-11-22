@@ -1,7 +1,7 @@
-From 242edf42851d6ea7cd44043765c5e9069818435a Mon Sep 17 00:00:00 2001
+From 2f6fa120cb975cfad2be2ae8ea9cd89db3ab8d1d Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 13 Feb 2026 13:41:26 +0100
-Subject: [PATCH 27/29] can: isotp: change return type of functions to void
+Subject: [PATCH 28/30] can: isotp: change return type of functions to void
 
 The return values of some functions have never been used and needed.
 Make those functions void to remove unused return values.
@@ -12,7 +12,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 41 insertions(+), 36 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 1922eba..5d91e65 100644
+index 31acff7..a918258 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -286,7 +286,7 @@ static enum hrtimer_restart isotp_rx_timer_handler(struct hrtimer *hrtimer)

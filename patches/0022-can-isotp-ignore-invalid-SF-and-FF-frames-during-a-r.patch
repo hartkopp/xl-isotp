@@ -1,7 +1,7 @@
-From b067f8d3e77cf73264fe4fe16b05e65046427789 Mon Sep 17 00:00:00 2001
+From be62e94439bf1da50b22fc28d0ad7d44acd49719 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 12:15:39 +0000
-Subject: [PATCH 21/29] can: isotp: ignore invalid SF and FF frames during a
+Subject: [PATCH 22/30] can: isotp: ignore invalid SF and FF frames during a
  reception
 
 isotp_rcv_sf() and isotp_rcv_ff() stop the rx timeout and set the rx
@@ -19,7 +19,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 26 insertions(+), 20 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index f8ed846..7347515 100644
+index f6801c1..39bae46 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -549,12 +549,14 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,

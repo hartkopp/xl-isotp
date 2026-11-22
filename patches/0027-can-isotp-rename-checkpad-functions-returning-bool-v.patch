@@ -1,7 +1,7 @@
-From bc80b1a202abf8b0b4e6ed4cbc6d71e63e213d25 Mon Sep 17 00:00:00 2001
+From 376e9e1e87f3c3dffc597cce7696d0d19b317113 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 18:52:37 +0100
-Subject: [PATCH 26/29] can: isotp: rename checkpad functions returning bool
+Subject: [PATCH 27/30] can: isotp: rename checkpad functions returning bool
  values
 
 The checkpad functions return true when failing. Rename the functions
@@ -14,7 +14,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 14 insertions(+), 13 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 904f9d8..1922eba 100644
+index 61021d7..31acff7 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -395,8 +395,8 @@ static u8 padlen(u8 datalen)
