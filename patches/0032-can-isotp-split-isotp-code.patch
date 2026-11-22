@@ -1,7 +1,7 @@
-From 69c421e14ee4172eb6adcf1bd7ae9377fb682d3f Mon Sep 17 00:00:00 2001
+From cf5ee9208014574f19e36a129d4ece1c8f8dfb9b Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 10:19:05 +0200
-Subject: [PATCH 31/34] can: isotp: split isotp code
+Subject: [PATCH 32/35] can: isotp: split isotp code
 
 Split code into core functions, hrtimer and RX/TX path functions.
 
@@ -9,12 +9,12 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---
  net/can/isotp/Makefile         |    6 +-
  net/can/isotp/hrtimer.c        |  101 +++
- net/can/isotp/isotp.c          | 1275 +-------------------------------
+ net/can/isotp/isotp.c          | 1281 +-------------------------------
  net/can/isotp/isotp_hrtimer.h  |   14 +
  net/can/isotp/isotp_protocol.h |   32 +
- net/can/isotp/protocolrx.c     |  539 ++++++++++++++
+ net/can/isotp/protocolrx.c     |  545 ++++++++++++++
  net/can/isotp/protocoltx.c     |  678 +++++++++++++++++
- 7 files changed, 1372 insertions(+), 1273 deletions(-)
+ 7 files changed, 1378 insertions(+), 1279 deletions(-)
  create mode 100644 net/can/isotp/hrtimer.c
  create mode 100644 net/can/isotp/isotp_hrtimer.h
  create mode 100644 net/can/isotp/isotp_protocol.h
@@ -143,7 +143,7 @@ index 0000000..a681243
 +	return HRTIMER_NORESTART;
 +}
 diff --git a/net/can/isotp/isotp.c b/net/can/isotp/isotp.c
-index c680d6d..5a55620 100644
+index d351bc8..5a55620 100644
 --- a/net/can/isotp/isotp.c
 +++ b/net/can/isotp/isotp.c
 @@ -1,19 +1,5 @@
@@ -202,7 +202,7 @@ index c680d6d..5a55620 100644
  module_param(max_pdu_size, uint, 0444);
  MODULE_PARM_DESC(max_pdu_size, "maximum isotp pdu size (default "
  		 __stringify(DEFAULT_MAX_PDU_SIZE) ")");
-@@ -89,1260 +74,6 @@ static LIST_HEAD(isotp_notifier_list);
+@@ -89,1266 +74,6 @@ static LIST_HEAD(isotp_notifier_list);
  static DEFINE_SPINLOCK(isotp_notifier_lock);
  static struct isotp_sock *isotp_busy_notifier;
  
@@ -568,11 +568,13 @@ index c680d6d..5a55620 100644
 -	struct isotp_sock *so = isotp_sk(sk);
 -	struct sk_buff *nskb;
 -
--	hrtimer_cancel(&so->rxtimer);
--	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
--
+-	/* ignore invalid SFs (ongoing reception is not affected) */
 -	if (!len || len > cf->len - pcilen)
 -		return;
+-
+-	/* terminate a potentially ongoing reception */
+-	hrtimer_cancel(&so->rxtimer);
+-	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
 -
 -	if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
 -	    chk_pad_fail(so, cf, pcilen + len, so->opt.rxpad_content)) {
@@ -599,48 +601,52 @@ index c680d6d..5a55620 100644
 -static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
 -{
 -	struct isotp_sock *so = isotp_sk(sk);
--	unsigned int sf_max;
+-	unsigned int ll_dl, len, sf_max;
 -	int i;
 -	int ff_pci_sz;
 -
--	hrtimer_cancel(&so->rxtimer);
--	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
--
 -	/* get the used sender LL_DL from the (first) CAN frame data length */
--	so->rx.ll_dl = padlen(cf->len);
+-	ll_dl = padlen(cf->len);
 -
 -	/* the first frame has to use the entire frame up to LL_DL length */
--	if (cf->len != so->rx.ll_dl)
+-	if (cf->len != ll_dl)
 -		return;
 -
 -	/* get the FF_DL */
--	so->rx.len = (cf->data[ae] & 0x0F) << 8;
--	so->rx.len += cf->data[ae + 1];
+-	len = (cf->data[ae] & 0x0F) << 8;
+-	len += cf->data[ae + 1];
 -
 -	/* Check for FF_DL escape sequence supporting 32 bit PDU length */
--	if (so->rx.len) {
+-	if (len) {
 -		ff_pci_sz = FF_PCI_SZ12;
 -	} else {
 -		/* FF_DL = 0 => get real length from next 4 bytes */
--		so->rx.len = cf->data[ae + 2] << 24;
--		so->rx.len += cf->data[ae + 3] << 16;
--		so->rx.len += cf->data[ae + 4] << 8;
--		so->rx.len += cf->data[ae + 5];
+-		len = cf->data[ae + 2] << 24;
+-		len += cf->data[ae + 3] << 16;
+-		len += cf->data[ae + 4] << 8;
+-		len += cf->data[ae + 5];
 -		ff_pci_sz = FF_PCI_SZ32;
 -
 -		/* unneeded escape sequence => ignore PDU according to spec */
--		if (so->rx.len <= MAX_12BIT_PDU_SIZE)
+-		if (len <= MAX_12BIT_PDU_SIZE)
 -			return;
 -	}
 -
 -	/* the PDU must not fit into a SF (FF_DLmin) */
--	if (so->rx.ll_dl == CAN_ISOTP_MIN_TX_DL)
+-	if (ll_dl == CAN_ISOTP_MIN_TX_DL)
 -		sf_max = CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae;
 -	else
--		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
+-		sf_max = ll_dl - SF_PCI_SZ8 - ae;
 -
--	if (so->rx.len <= sf_max)
+-	if (len <= sf_max)
 -		return;
+-
+-	/* valid FF => terminate a potentially ongoing reception */
+-	hrtimer_cancel(&so->rxtimer);
+-	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
+-
+-	so->rx.ll_dl = ll_dl;
+-	so->rx.len = len;
 -
 -	/* PDU size > default => try max_pdu_size
 -	 *
@@ -1523,10 +1529,10 @@ index 0000000..3deaf36
 +#endif /* _ISOTP_PROTOCOL_H_ */
 diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
 new file mode 100644
-index 0000000..aaa9150
+index 0000000..05ddcb6
 --- /dev/null
 +++ b/net/can/isotp/protocolrx.c
-@@ -0,0 +1,539 @@
+@@ -0,0 +1,545 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 +// Copyright and detailed license information see isotp.c
 +
@@ -1759,11 +1765,13 @@ index 0000000..aaa9150
 +	struct isotp_sock *so = isotp_sk(sk);
 +	struct sk_buff *nskb;
 +
-+	hrtimer_cancel(&so->rxtimer);
-+	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
-+
++	/* ignore invalid SFs (ongoing reception is not affected) */
 +	if (!len || len > cf->len - pcilen)
 +		return;
++
++	/* terminate a potentially ongoing reception */
++	hrtimer_cancel(&so->rxtimer);
++	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
 +
 +	if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
 +	    chk_pad_fail(so, cf, pcilen + len, so->opt.rxpad_content)) {
@@ -1788,48 +1796,52 @@ index 0000000..aaa9150
 +static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
 +{
 +	struct isotp_sock *so = isotp_sk(sk);
-+	unsigned int sf_max;
++	unsigned int ll_dl, len, sf_max;
 +	int i;
 +	int ff_pci_sz;
 +
-+	hrtimer_cancel(&so->rxtimer);
-+	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
-+
 +	/* get the used sender LL_DL from the (first) CAN frame data length */
-+	so->rx.ll_dl = padlen(cf->len);
++	ll_dl = padlen(cf->len);
 +
 +	/* the first frame has to use the entire frame up to LL_DL length */
-+	if (cf->len != so->rx.ll_dl)
++	if (cf->len != ll_dl)
 +		return;
 +
 +	/* get the FF_DL */
-+	so->rx.len = (cf->data[ae] & 0x0F) << 8;
-+	so->rx.len += cf->data[ae + 1];
++	len = (cf->data[ae] & 0x0F) << 8;
++	len += cf->data[ae + 1];
 +
 +	/* Check for FF_DL escape sequence supporting 32 bit PDU length */
-+	if (so->rx.len) {
++	if (len) {
 +		ff_pci_sz = FF_PCI_SZ12;
 +	} else {
 +		/* FF_DL = 0 => get real length from next 4 bytes */
-+		so->rx.len = cf->data[ae + 2] << 24;
-+		so->rx.len += cf->data[ae + 3] << 16;
-+		so->rx.len += cf->data[ae + 4] << 8;
-+		so->rx.len += cf->data[ae + 5];
++		len = cf->data[ae + 2] << 24;
++		len += cf->data[ae + 3] << 16;
++		len += cf->data[ae + 4] << 8;
++		len += cf->data[ae + 5];
 +		ff_pci_sz = FF_PCI_SZ32;
 +
 +		/* unneeded escape sequence => ignore PDU according to spec */
-+		if (so->rx.len <= MAX_12BIT_PDU_SIZE)
++		if (len <= MAX_12BIT_PDU_SIZE)
 +			return;
 +	}
 +
 +	/* the PDU must not fit into a SF (FF_DLmin) */
-+	if (so->rx.ll_dl == CAN_ISOTP_MIN_TX_DL)
++	if (ll_dl == CAN_ISOTP_MIN_TX_DL)
 +		sf_max = CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae;
 +	else
-+		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
++		sf_max = ll_dl - SF_PCI_SZ8 - ae;
 +
-+	if (so->rx.len <= sf_max)
++	if (len <= sf_max)
 +		return;
++
++	/* valid FF => terminate a potentially ongoing reception */
++	hrtimer_cancel(&so->rxtimer);
++	WRITE_ONCE(so->rx.state, ISOTP_IDLE);
++
++	so->rx.ll_dl = ll_dl;
++	so->rx.len = len;
 +
 +	/* PDU size > default => try max_pdu_size
 +	 *

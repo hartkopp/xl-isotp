@@ -1,7 +1,7 @@
-From 71ac6fa23dfcf5f70427754f4cd3b5ffb592a947 Mon Sep 17 00:00:00 2001
+From b3c5f250b3cf2ff46026deb9565aadbcad0d82f7 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 12:26:22 +0200
-Subject: [PATCH 33/34] can: isotp: add CAN XL protocol extension support
+Subject: [PATCH 34/35] can: isotp: add CAN XL protocol extension support
 
 Changes for CAN XL:
 
@@ -369,34 +369,34 @@ index fe464bf..906b637 100644
 +
  #endif /* _ISOTP_PROTOCOL_H_ */
 diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
-index 250497d..6d8e21c 100644
+index 50a034e..e898d9b 100644
 --- a/net/can/isotp/protocolrx.c
 +++ b/net/can/isotp/protocolrx.c
-@@ -274,9 +274,12 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+@@ -273,9 +273,12 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
  		return;
  
  	/* get the used sender LL_DL from the (first) CAN frame data length */
--	so->rx.ll_dl = padlen(datalen);
+-	ll_dl = padlen(datalen);
 +	if (fd_pdu(so) && datalen > CAN_ISOTP_MIN_TX_DL)
-+		so->rx.ll_dl = padlen(datalen);
++		ll_dl = padlen(datalen);
 +	else
-+		so->rx.ll_dl = datalen;
++		ll_dl = datalen;
  
 -	/* CAN FD: the first frame uses the entire LL_DL length (no padding) */
 +	/* the first frame uses the entire LL_DL length (no padding) */
- 	if (datalen != so->rx.ll_dl)
+ 	if (datalen != ll_dl)
  		return;
  
-@@ -304,7 +307,7 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
- 	if (so->rx.ll_dl == CAN_ISOTP_MIN_TX_DL)
+@@ -303,7 +306,7 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+ 	if (ll_dl == CAN_ISOTP_MIN_TX_DL)
  		sf_max = CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae;
  	else
--		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
-+		sf_max = so->rx.ll_dl - SF_PCI_SZ11 - ae;
+-		sf_max = ll_dl - SF_PCI_SZ8 - ae;
++		sf_max = ll_dl - SF_PCI_SZ11 - ae;
  
- 	if (so->rx.len <= sf_max)
+ 	if (len <= sf_max)
  		return;
-@@ -446,18 +449,62 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
+@@ -452,18 +455,62 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
  	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
  }
  
@@ -462,7 +462,7 @@ index 250497d..6d8e21c 100644
  		return NULL;
  
  	/* check for correct CAN CC/FD frame content */
-@@ -468,9 +515,9 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+@@ -474,9 +521,9 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
  		return NULL;
  	}
  
@@ -474,7 +474,7 @@ index 250497d..6d8e21c 100644
  }
  
  void isotp_rcv(struct sk_buff *skb, void *skdata)
-@@ -522,7 +569,7 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+@@ -528,7 +575,7 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
  		 *
  		 * As we do not have a rx.ll_dl configuration, we can only test
  		 * if the CAN frames payload length matches the LL_DL == 8
@@ -483,7 +483,7 @@ index 250497d..6d8e21c 100644
  		 */
  
  		/* get the SF_DL from the N_PCI byte */
-@@ -531,22 +578,28 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+@@ -537,22 +584,28 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
  		if (datalen <= CAN_MAX_DLEN) {
  			isotp_rcv_sf(sk, data, datalen,
  				     SF_PCI_SZ4 + ae, skb, sf_dl);
