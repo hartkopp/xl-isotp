@@ -186,56 +186,56 @@ und `split`:
   den Empfangs-Timeout schon vor der Blocksize-Prüfung. Patch 28 behält
   beides bei und entfernt nur die Rückgabewerte.
 
-## Patches 30 bis 35: CAN_ISOTP-Aufteilung und CAN XL
+## Patches 31 bis 36: CAN_ISOTP-Aufteilung und CAN XL
 
 | # | Patch |
 |---|---|
-| 30 | can: isotp: move isotp.c into in separate directory |
-| 31 | can: isotp: move common definitions to separate header file |
-| 32 | can: isotp: split isotp code |
-| 33 | can: isotp: rework CAN frame structure access for CAN XL |
-| 34 | can: isotp: add CAN XL protocol extension support |
-| 35 | can: isotp: add official support for 1-to-n multicast mode |
+| 31 | can: isotp: move isotp.c into in separate directory |
+| 32 | can: isotp: move common definitions to separate header file |
+| 33 | can: isotp: split isotp code |
+| 34 | can: isotp: rework CAN frame structure access for CAN XL |
+| 35 | can: isotp: add CAN XL protocol extension support |
+| 36 | can: isotp: add official support for 1-to-n multicast mode |
 
-- **Patch 30** verschiebt `net/can/isotp.c` nach `net/can/isotp/isotp.c`
+- **Patch 31** verschiebt `net/can/isotp.c` nach `net/can/isotp/isotp.c`
   mit eigenem Makefile.
-- **Patch 31** verschiebt Defines, `enum` und Strukturen nach
+- **Patch 32** verschiebt Defines, `enum` und Strukturen nach
   `isotp_defines.h`.
-- **Patch 32** teilt den Code in `isotp.c` (Socket-API), `protocolrx.c`,
+- **Patch 33** teilt den Code in `isotp.c` (Socket-API), `protocolrx.c`,
   `protocoltx.c` und `hrtimer.c` mit `isotp_protocol.h` und
   `isotp_hrtimer.h` auf.
-- **Patch 33** greift über Datenzeiger und Datenlänge statt über
+- **Patch 34** greift über Datenzeiger und Datenlänge statt über
   `struct canfd_frame` auf die CAN-Frames zu und führt Hilfsfunktionen für
   Frame-Header und PCI ein.
-- **Patch 34** ergänzt die Socket-Option `CAN_ISOTP_XL_OPTS`, die
+- **Patch 35** ergänzt die Socket-Option `CAN_ISOTP_XL_OPTS`, die
   CAN-XL-Frame-Header, die SF-Längenkodierung für CAN XL und die Kapselung
   der CiA SDTs 6/7/9.
-- **Patch 35** führt den N_PCI-Typ Multicast First Frame (MF) mit
+- **Patch 36** führt den N_PCI-Typ Multicast First Frame (MF) mit
   `CAN_ISOTP_MF_BROADCAST` ein.
 
-Die Patches setzen auf Patch 29 auf. Anpassungen an den 7.4-Code und die
-Patches 1 bis 29:
+Die Patches setzen auf Patch 30 auf. Anpassungen an den 7.4-Code und die
+Patches 1 bis 30:
 
-- Patch 32 übernimmt die Funktionen unverändert aus dem aktuellen
+- Patch 33 übernimmt die Funktionen unverändert aus dem aktuellen
   `isotp.c`, also mit `conf_lock` (Patch 4), der CF-Längenprüfung und dem
   Empfangs-Timeout aus Patch 6, dem späten Lesen von `ae` und
   `wait_tx_done` in `isotp_sendmsg()` (Patch 7), der memcg-Abrechnung
   (Patch 11), der Prüfung von `CAN_ISOTP_OPTS` vor dem Kopieren
   (Patch 12), `frame_txtime` in den Timeouts (Patch 13), den Fixes für
-  den Empfangspfad (Patch 16 bis 21) und den
+  den Empfangspfad (Patch 17 bis 22) und den
   7.4-Änderungen (`can_skb_uid` als Echo-Kennung,
   `READ_ONCE(so->bound)`, Prüfung des CC/FD-Frame-Inhalts in
-  `isotp_rcv()`). `conf_lock` liegt seit Patch 31 mit in
+  `isotp_rcv()`). `conf_lock` liegt seit Patch 32 mit in
   `struct isotp_sock` in `isotp_defines.h`.
-- Ab Patch 33 steht die Prüfung des CC/FD-Frame-Inhalts
+- Ab Patch 34 steht die Prüfung des CC/FD-Frame-Inhalts
   (`can_is_can_skb()` bzw. `can_is_canfd_skb()`) in
   `isotp_check_frame_head()`; CAN-XL-Frames prüft dort
-  `can_is_canxl_skb()`. Patch 33 und 34 lesen in `isotp_sendmsg()` keine
+  `can_is_canxl_skb()`. Patch 34 und 35 lesen in `isotp_sendmsg()` keine
   Socket-Optionen vor der Belegung der Übertragung.
-- Patch 34 enthält die Prüfung getunnelter CC/FD-N_PDUs (SDT 6/7) in
+- Patch 35 enthält die Prüfung getunnelter CC/FD-N_PDUs (SDT 6/7) in
   `isotp_check_frame_head()` (bisher Patch 35 auf `split`) und stellt die
-  FF_DLmin-Prüfung aus Patch 18 auf `SF_PCI_SZ11` um.
-- Patch 34 unterscheidet die N_PDU-Arten im XL-Modus nur über das FD-Flag
+  FF_DLmin-Prüfung aus Patch 19 auf `SF_PCI_SZ11` um.
+- Patch 35 unterscheidet die N_PDU-Arten im XL-Modus nur über das FD-Flag
   (`ll.mtu`) und das LL_DL (ISO 15765-2 Ed. 4, CAN XL ohne Padding):
   CC-N_PDU (`CAN_MTU`, TX_DL = 8, optionales Padding), FD-N_PDU
   (`CANFD_MTU`, FD-TX_DL, Padding wie bei CAN FD, auch mit SDT 9) und
@@ -248,12 +248,12 @@ Patches 1 bis 29:
   XL-N_PDUs den CC/FD-Regeln. Wie bei CC/FD prüft der Empfang nur, ob die Daten im
   Frame enthalten sind, nicht die genaue Frame-Länge (ein Sender, der
   trotzdem auffüllt, wird also auch ohne Padding-Prüfung akzeptiert).
-- Patch 34 setzt den wirksamen TX_DL erst in `isotp_bind()` (XL-Modus:
+- Patch 35 setzt den wirksamen TX_DL erst in `isotp_bind()` (XL-Modus:
   `CAN_ISOTP_XL_OPTS`, sonst `CAN_ISOTP_LL_OPTS`), unabhängig von der
   Reihenfolge der Socket-Optionen. Im XL-Modus prüft `isotp_bind()` die
   MTU des Interfaces gegen `CANXL_HDR_SIZE` + TX_DL (mindestens
   `CANXL_MIN_MTU`).
-- `CAN_ISOTP_XL_OPTS` (Patch 34) folgt dem Schema der 7.4-Socket-Optionen:
+- `CAN_ISOTP_XL_OPTS` (Patch 35) folgt dem Schema der 7.4-Socket-Optionen:
   `isotp_setsockopt()` kopiert den Wert vor `conf_lock` mit
   Längenprüfung, `isotp_setsockopt_locked()` prüft ihn über einen Zeiger,
   und `isotp_getsockopt()` liest ihn unter `conf_lock` in eine lokale
@@ -268,12 +268,12 @@ Patches 1 bis 29:
   `hrtimer.c` aufrufen, ist dort eine normale Funktion mit Prototyp in
   `isotp_protocol.h`.
 - In `isotp_protocol.h` bleiben nur die Einzeiler `isotp_sk()`,
-  `isotp_bc_flags()`, `fd_pdu()` (Patch 33) und `xl_encap()` (Patch 34),
+  `isotp_bc_flags()`, `fd_pdu()` (Patch 34) und `xl_encap()` (Patch 35),
   die mehrere `.c`-Dateien nutzen. Sie sind `static inline`, da eine
   `static`-Funktion im Header in jeder `.c`-Datei, die sie nicht nutzt,
   `-Wunused-function` auslöst (mit `CONFIG_WERROR` ein Build-Fehler). In
   `.c`-Dateien gibt es kein `inline`.
-- Patch 35 ergänzt `CAN_ISOTP_MF_BROADCAST` nur in `ISOTP_ALL_BC_FLAGS`;
+- Patch 36 ergänzt `CAN_ISOTP_MF_BROADCAST` nur in `ISOTP_ALL_BC_FLAGS`;
   die Prüfung auf ein einziges Broadcast-Flag aus Patch 12 deckt damit
   alle drei Flags ab. Der ursprüngliche Zählblock mit `bcfl_num` in
   `isotp_setsockopt_locked()` entfällt.
@@ -288,7 +288,7 @@ dort identisch.
 
 ## Prüfung
 
-- Die Dateien 1 bis 7 und 9 bis 35 wenden in dieser Reihenfolge per `git am` auf
+- Die Dateien 1 bis 7 und 9 bis 36 wenden in dieser Reihenfolge per `git am` auf
   `main` an.
 - `net/can/` übersetzt nach jedem der Patches 1 bis 7 und 9 bis 11 fehler- und
   warnungsfrei (gcc 13.3, `W=1`, mit `CONFIG_PROVE_LOCKING`,
@@ -310,24 +310,25 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Der Code nach Patch 33 ist bis auf einen Kommentar in `isotp_rcv_ff()`
-  und die Änderungen aus Patch 14 (`tx_flags`), 15 (STmin) und 21 (SF/FF)
+- Der Code nach Patch 34 ist bis auf einen Kommentar in `isotp_rcv_ff()`
+  und die Änderungen aus Patch 14 (`tx_flags`), 15 (STmin), 16
+  (`CHK_PAD_DATA`) und 22 (SF/FF)
   identisch mit dem Stand auf
-  `split` (bisherige Reihenfolge). Patch 34
+  `split` (bisherige Reihenfolge). Patch 35
   enthält zusätzlich die Padding-Regeln für die N_PDU-Arten im XL-Modus.
-- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 35
+- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 36
   fehler- und warnungsfrei (21.11.2026, `git am` auf Mainline
   `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
-  `net/can/isotp.o` bzw. ab Patch 32 die Dateien in `net/can/isotp/`
-  werden in jedem Schritt neu übersetzt. Patch 14, 15 und 21 sind
-  danach eingefügt worden und noch nicht übersetzt. Die Padding-Regeln in Patch 34
-  sind danach entstanden; der Endstand nach Patch 35 ist damit als Modul
-  übersetzt, die Zwischenstände 33 bis 35 nicht einzeln. Die reservierten
+  `net/can/isotp.o` bzw. ab Patch 33 die Dateien in `net/can/isotp/`
+  werden in jedem Schritt neu übersetzt. Patch 14, 15, 16 und 22
+  sind danach eingefügt worden und noch nicht übersetzt. Die Padding-Regeln in Patch 35
+  sind danach entstanden; der Endstand nach Patch 36 ist damit als Modul
+  übersetzt, die Zwischenstände 34 bis 36 nicht einzeln. Die reservierten
   Bytes in `struct can_isotp_xl_options`, der TX_DL in `isotp_bind()`, die
-  XL-MTU-Prüfung (alle Patch 34) sind danach hinzugekommen und mit
+  XL-MTU-Prüfung (alle Patch 35) sind danach hinzugekommen und mit
   Kernel `7.4.0-rc3-xlisotp-00834` als Modul übersetzt (Stand 583eb01,
   noch mit exakten XL-Längen). Deren Entfernung ist noch nicht übersetzt.
-- Der Endstand nach Patch 35 ist mit can-tests `functest/isotp` (Branch
+- Der Endstand nach Patch 36 ist mit can-tests `functest/isotp` (Branch
   `isotp_ft`, `bc5b7b5`, vor dem Rebase `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
   bestehen ohne DEVIATION, offen sind nur die zwei netem-FINDINGs
   (TIM-ECHO-006/007, Ursache `skb_orphan_partial()` in net/core). Kernel
@@ -335,6 +336,6 @@ dort identisch.
   diesem Stand.
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
   den `Fixes:`-Zeilen bzw. Commit-Referenzen, den MAINTAINERS-Hinweisen
-  bei den Dateiverschiebungen in Patch 30 bis 32 und (mit `--strict`)
-  einer Leerzeile nach `{` in `struct can_isotp_xl_options` in Patch 34
+  bei den Dateiverschiebungen in Patch 31 bis 33 und (mit `--strict`)
+  einer Leerzeile nach `{` in `struct can_isotp_xl_options` in Patch 35
   (Stand der bisherigen Reihenfolge).

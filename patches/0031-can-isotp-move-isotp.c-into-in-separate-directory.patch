@@ -1,7 +1,7 @@
-From fb0230ef02539e8f5b5584d9519beba2b284967a Mon Sep 17 00:00:00 2001
+From 8b92cc8a3eb81cbddcaeb51227c412720646fd1b Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:54:59 +0100
-Subject: [PATCH 30/35] can: isotp: move isotp.c into in separate directory
+Subject: [PATCH 31/36] can: isotp: move isotp.c into in separate directory
 
 With the introduction of the CAN XL support the isotp.c file has to be
 extended with additional protocol components (SF handling, variable
