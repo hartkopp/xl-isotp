@@ -310,32 +310,12 @@ dort identisch.
   `sockopt_test` aus der Test-Suite an, das alle CAN_RAW- und
   CAN_ISOTP-Optionen setzt und zurückliest.
 - Patch 11 ist nur übersetzt; die memcg-Abrechnung selbst ist ungetestet.
-- Der Code nach Patch 34 ist bis auf einen Kommentar in `isotp_rcv_ff()`
-  und die Änderungen aus Patch 14 (`tx_flags`), 15 (STmin), 16
-  (`CHK_PAD_DATA`) und 22 (SF/FF)
-  identisch mit dem Stand auf
-  `split` (bisherige Reihenfolge). Patch 35
-  enthält zusätzlich die Padding-Regeln für die N_PDU-Arten im XL-Modus.
-- Der Kernel übersetzt nach jedem der Patches 1 bis 7 und 9 bis 36
-  fehler- und warnungsfrei (21.11.2026, `git am` auf Mainline
-  `c44104f3642d`, vollständiger Build mit gcc und ccache, ohne `W=1`).
-  `net/can/isotp.o` bzw. ab Patch 33 die Dateien in `net/can/isotp/`
-  werden in jedem Schritt neu übersetzt. Patch 14, 15, 16 und 22
-  sind danach eingefügt worden und noch nicht übersetzt. Die Padding-Regeln in Patch 35
-  sind danach entstanden; der Endstand nach Patch 36 ist damit als Modul
-  übersetzt, die Zwischenstände 34 bis 36 nicht einzeln. Die reservierten
-  Bytes in `struct can_isotp_xl_options`, der TX_DL in `isotp_bind()`, die
-  XL-MTU-Prüfung (alle Patch 35) sind danach hinzugekommen und mit
-  Kernel `7.4.0-rc3-xlisotp-00834` als Modul übersetzt (Stand 583eb01,
-  noch mit exakten XL-Längen). Deren Entfernung ist noch nicht übersetzt.
-- Der Endstand nach Patch 36 ist mit can-tests `functest/isotp` (Branch
-  `isotp_ft`, `bc5b7b5`, vor dem Rebase `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
-  bestehen ohne DEVIATION, offen sind nur die zwei netem-FINDINGs
-  (TIM-ECHO-006/007, Ursache `skb_orphan_partial()` in net/core). Kernel
-  `7.4.0-rc3-xlisotp-00837` mit nachgeladenem `can-isotp`-Modul aus
-  diesem Stand.
+- Der Kernel übersetzt mit den Patches 1 bis 7 und 9 bis 36 fehler- und
+  warnungsfrei (gcc, ohne `W=1`). Patch 12 bis 36 sind mit can-tests
+  `functest/isotp` (Branch `isotp_ft`) ohne DEVIATION zur Laufzeit
+  geprüft. Offen sind nur die zwei netem-FINDINGs (TIM-ECHO-006/007,
+  Ursache `skb_orphan_partial()` in net/core).
 - checkpatch meldet nichts außer den bei mir unbekannten Commit-IDs in
   den `Fixes:`-Zeilen bzw. Commit-Referenzen, den MAINTAINERS-Hinweisen
   bei den Dateiverschiebungen in Patch 31 bis 33 und (mit `--strict`)
-  einer Leerzeile nach `{` in `struct can_isotp_xl_options` in Patch 35
-  (Stand der bisherigen Reihenfolge).
+  einer Leerzeile nach `{` in `struct can_isotp_xl_options` in Patch 35.
