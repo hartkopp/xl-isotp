@@ -1,7 +1,7 @@
-From 66f2f0a99eb90366f3d63e882a12c279bb6ad335 Mon Sep 17 00:00:00 2001
+From 9210ccb70fc71c6462f81f2338e752a20b34bf42 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 20:47:24 +0200
-Subject: [PATCH 33/33] can: isotp: add official support for 1-to-n multicast
+Subject: [PATCH 34/34] can: isotp: add official support for 1-to-n multicast
  mode
 
 The 1-to-n multicast (aka First Frame without Flow Control) has already

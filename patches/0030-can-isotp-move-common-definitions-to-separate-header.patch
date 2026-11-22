@@ -1,7 +1,7 @@
-From 516568a5261a2dc468741b7a2848e857a6b5119e Mon Sep 17 00:00:00 2001
+From 2b7559c5e48460ba6ddfcff02bff9702c75cbe2f Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 13 Feb 2026 14:52:19 +0100
-Subject: [PATCH 29/33] can: isotp: move common definitions to separate header
+Subject: [PATCH 30/34] can: isotp: move common definitions to separate header
  file
 
 Create a new isotp_defines.h which is used by the upcoming code split.
@@ -14,7 +14,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  create mode 100644 net/can/isotp/isotp_defines.h
 
 diff --git a/net/can/isotp/isotp.c b/net/can/isotp/isotp.c
-index 0d812c1..d67d564 100644
+index d976f1e..c680d6d 100644
 --- a/net/can/isotp/isotp.c
 +++ b/net/can/isotp/isotp.c
 @@ -73,119 +73,18 @@

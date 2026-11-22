@@ -1,7 +1,7 @@
-From 37ab336099a2130ae7ebaf766a51c1649556f2c5 Mon Sep 17 00:00:00 2001
+From 69c421e14ee4172eb6adcf1bd7ae9377fb682d3f Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 10:19:05 +0200
-Subject: [PATCH 30/33] can: isotp: split isotp code
+Subject: [PATCH 31/34] can: isotp: split isotp code
 
 Split code into core functions, hrtimer and RX/TX path functions.
 
@@ -143,7 +143,7 @@ index 0000000..a681243
 +	return HRTIMER_NORESTART;
 +}
 diff --git a/net/can/isotp/isotp.c b/net/can/isotp/isotp.c
-index d67d564..9014af5 100644
+index c680d6d..5a55620 100644
 --- a/net/can/isotp/isotp.c
 +++ b/net/can/isotp/isotp.c
 @@ -1,19 +1,5 @@
