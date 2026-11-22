@@ -1,4 +1,4 @@
-From 5fa2993dc5867be88a4838fb61b1265ab4e08b8d Mon Sep 17 00:00:00 2001
+From 4870d397b581f64fafef5dc4d8079434cd3d0e40 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 11 May 2026 12:26:22 +0200
 Subject: [PATCH 31/32] can: isotp: add CAN XL protocol extension support
@@ -17,12 +17,12 @@ No functional change for CAN CC/FD protocols.
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---
  include/uapi/linux/can/isotp.h |  39 ++++++++++
- net/can/isotp/isotp.c          | 129 +++++++++++++++++++++++++++++++-
+ net/can/isotp/isotp.c          | 129 ++++++++++++++++++++++++++++++++-
  net/can/isotp/isotp_defines.h  |  28 ++++++-
  net/can/isotp/isotp_protocol.h |   6 ++
- net/can/isotp/protocolrx.c     | 132 ++++++++++++++++++++++++++-------
- net/can/isotp/protocoltx.c     |  69 +++++++++++++----
- 6 files changed, 355 insertions(+), 48 deletions(-)
+ net/can/isotp/protocolrx.c     | 121 ++++++++++++++++++++++++-------
+ net/can/isotp/protocoltx.c     |  69 ++++++++++++++----
+ 6 files changed, 344 insertions(+), 48 deletions(-)
 
 diff --git a/include/uapi/linux/can/isotp.h b/include/uapi/linux/can/isotp.h
 index 580d2ae..7103b2c 100644
@@ -369,14 +369,14 @@ index fe464bf..906b637 100644
 +
  #endif /* _ISOTP_PROTOCOL_H_ */
 diff --git a/net/can/isotp/protocolrx.c b/net/can/isotp/protocolrx.c
-index 250497d..083f73d 100644
+index 250497d..6045a7d 100644
 --- a/net/can/isotp/protocolrx.c
 +++ b/net/can/isotp/protocolrx.c
 @@ -98,12 +98,22 @@ static bool chk_optimized_fail(unsigned int datalen, int start_index)
  	return (datalen != padlen(start_index));
  }
  
-+/* CAN XL N_PDU (LL_DL > 8): no padding => exact frame lengths */
++/* CAN XL N_PDU (LL_DL > 8): no padding */
 +static bool xl_npdu(struct isotp_sock *so, unsigned int ll_dl)
 +{
 +	return xl_encap(so) && !fd_pdu(so) && ll_dl > CAN_ISOTP_MIN_TX_DL;
@@ -396,26 +396,18 @@ index 250497d..083f73d 100644
  	/* no RX_PADDING value => check length of optimized frame length */
  	if (!(so->opt.flags & CAN_ISOTP_RX_PADDING)) {
  		if (so->opt.flags & CAN_ISOTP_CHK_PAD_LEN)
-@@ -148,8 +158,10 @@ static void isotp_rcv_fc(struct isotp_sock *so, u8 *data, unsigned int datalen)
- 		return;
+@@ -149,7 +159,7 @@ static void isotp_rcv_fc(struct isotp_sock *so, u8 *data, unsigned int datalen)
  
  	if ((datalen < ae + FC_CONTENT_SZ) ||
-+	    /* CAN XL N_PDUs are not padded: FC with exact length */
-+	    (xl_npdu(so, datalen) && datalen != ae + FC_CONTENT_SZ) ||
  	    ((so->opt.flags & ISOTP_CHECK_PADDING) &&
 -	     chk_pad_fail(so, data, datalen, ae + FC_CONTENT_SZ,
 +	     chk_pad_fail(so, data, datalen, datalen, ae + FC_CONTENT_SZ,
  			  so->opt.rxpad_content))) {
  		/* malformed PDU - report 'not a data message' */
  		sk->sk_err = EBADMSG;
-@@ -238,8 +250,13 @@ static void isotp_rcv_sf(struct sock *sk, u8 *data, unsigned int datalen,
- 	if (!sf_dl || sf_dl > datalen - pcilen)
+@@ -239,7 +249,8 @@ static void isotp_rcv_sf(struct sock *sk, u8 *data, unsigned int datalen,
  		return;
  
-+	/* CAN XL N_PDUs are not padded: SF with exact length */
-+	if (xl_npdu(so, datalen) && sf_dl != datalen - pcilen)
-+		return;
-+
  	if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
 -	    chk_pad_fail(so, data, datalen, pcilen + sf_dl, so->opt.rxpad_content)) {
 +	    chk_pad_fail(so, data, datalen, datalen, pcilen + sf_dl,
@@ -423,7 +415,7 @@ index 250497d..083f73d 100644
  		/* malformed PDU - report 'not a data message' */
  		sk->sk_err = EBADMSG;
  		if (!sock_flag(sk, SOCK_DEAD))
-@@ -274,9 +291,12 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+@@ -274,9 +285,12 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
  		return;
  
  	/* get the used sender LL_DL from the (first) CAN frame data length */
@@ -438,7 +430,7 @@ index 250497d..083f73d 100644
  	if (datalen != so->rx.ll_dl)
  		return;
  
-@@ -304,7 +324,7 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
+@@ -304,7 +318,7 @@ static void isotp_rcv_ff(struct sock *sk, u8 *data, unsigned int datalen)
  	if (so->rx.ll_dl == CAN_ISOTP_MIN_TX_DL)
  		sf_max = CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae;
  	else
@@ -447,19 +439,7 @@ index 250497d..083f73d 100644
  
  	if (so->rx.len <= sf_max)
  		return;
-@@ -368,6 +388,11 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
- 			return;
- 	}
- 
-+	/* CAN XL N_PDUs are not padded: the last CF has the exact length */
-+	if (xl_npdu(so, so->rx.ll_dl) &&
-+	    so->rx.len - so->rx.idx < datalen - ae - N_PCI_SZ)
-+		return;
-+
- 	if (READ_ONCE(so->rx.state) != ISOTP_WAIT_DATA)
- 		return;
- 
-@@ -413,7 +438,8 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
+@@ -413,7 +427,8 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
  		WRITE_ONCE(so->rx.state, ISOTP_IDLE);
  
  		if ((so->opt.flags & ISOTP_CHECK_PADDING) &&
@@ -469,7 +449,7 @@ index 250497d..083f73d 100644
  			/* malformed PDU - report 'not a data message' */
  			sk->sk_err = EBADMSG;
  			if (!sock_flag(sk, SOCK_DEAD))
-@@ -446,18 +472,62 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
+@@ -446,18 +461,62 @@ static void isotp_rcv_cf(struct sock *sk, u8 *data, unsigned int datalen,
  	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
  }
  
@@ -535,7 +515,7 @@ index 250497d..083f73d 100644
  		return NULL;
  
  	/* check for correct CAN CC/FD frame content */
-@@ -468,9 +538,9 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
+@@ -468,9 +527,9 @@ static u8 *isotp_check_frame_head(struct isotp_sock *so, struct sk_buff *skb,
  		return NULL;
  	}
  
@@ -547,7 +527,7 @@ index 250497d..083f73d 100644
  }
  
  void isotp_rcv(struct sk_buff *skb, void *skdata)
-@@ -522,7 +592,7 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+@@ -522,7 +581,7 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
  		 *
  		 * As we do not have a rx.ll_dl configuration, we can only test
  		 * if the CAN frames payload length matches the LL_DL == 8
@@ -556,7 +536,7 @@ index 250497d..083f73d 100644
  		 */
  
  		/* get the SF_DL from the N_PCI byte */
-@@ -531,22 +601,28 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
+@@ -531,22 +590,28 @@ void isotp_rcv(struct sk_buff *skb, void *skdata)
  		if (datalen <= CAN_MAX_DLEN) {
  			isotp_rcv_sf(sk, data, datalen,
  				     SF_PCI_SZ4 + ae, skb, sf_dl);

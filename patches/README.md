@@ -244,9 +244,9 @@ Patches 1 bis 26:
   einen SF mit CAN_DL > 8 nur mit dem FD-Escape (N_PCI `0x00`), eine
   XL-N_PDU nur mit dem XL-SF-Flag. FD-N_PDUs müssen auch mit SDT 9 eine
   gültige FD-Länge haben, und XL-N_PDUs (LL_DL > 8) werden nicht auf
-  Padding geprüft. Da XL-N_PDUs kein Padding haben, müssen SF, letzter CF
-  und FC einer XL-N_PDU genau so lang sein wie ihr Inhalt (sonst werden
-  SF/CF verworfen, ein FC führt zu `EBADMSG`).
+  Padding geprüft. Wie bei CC/FD prüft der Empfang nur, ob die Daten im
+  Frame enthalten sind, nicht die genaue Frame-Länge (ein Sender, der
+  trotzdem auffüllt, wird also auch ohne Padding-Prüfung akzeptiert).
 - Patch 31 setzt den wirksamen TX_DL erst in `isotp_bind()` (XL-Modus:
   `CAN_ISOTP_XL_OPTS`, sonst `CAN_ISOTP_LL_OPTS`), unabhängig von der
   Reihenfolge der Socket-Optionen. Im XL-Modus prüft `isotp_bind()` die
@@ -320,8 +320,9 @@ dort identisch.
   sind danach entstanden; der Endstand nach Patch 32 ist damit als Modul
   übersetzt, die Zwischenstände 30 bis 32 nicht einzeln. Die reservierten
   Bytes in `struct can_isotp_xl_options`, der TX_DL in `isotp_bind()`, die
-  XL-MTU-Prüfung und die exakten XL-Längen (alle Patch 31) sind danach
-  hinzugekommen und noch nicht übersetzt.
+  XL-MTU-Prüfung (alle Patch 31) sind danach hinzugekommen und mit
+  Kernel `7.4.0-rc3-xlisotp-00834` als Modul übersetzt (Stand 583eb01,
+  noch mit exakten XL-Längen). Deren Entfernung ist noch nicht übersetzt.
 - Der Endstand nach Patch 32 ist mit can-tests `functest/isotp` (Branch
   `isotp_ft`, `bc5b7b5`, vor dem Rebase `b301889`) zur Laufzeit geprüft (21.11.2026): alle Tests
   bestehen ohne DEVIATION, offen sind nur die zwei netem-FINDINGs
