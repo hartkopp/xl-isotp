@@ -1,7 +1,7 @@
-From 01266a4d5aa8ddbcf52b7fe6b93a16e9d86b3b8c Mon Sep 17 00:00:00 2001
+From f1091543bde22aeeafbee7c6d52cdf9d1ba94803 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 13 Feb 2026 18:43:55 +0100
-Subject: [PATCH 30/32] can: isotp: rework CAN frame structure access for CAN
+Subject: [PATCH 31/33] can: isotp: rework CAN frame structure access for CAN
  XL
 
 As the layout of struct can[fd]_frame and struct canxl_frame differs all
