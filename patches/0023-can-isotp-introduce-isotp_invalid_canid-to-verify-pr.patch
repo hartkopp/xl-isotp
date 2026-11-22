@@ -1,7 +1,7 @@
-From 587e85d812010cf62782d27c4a40a654551e9071 Mon Sep 17 00:00:00 2001
+From f1e3f86e70f4c8ac1865bc1683e7d4dbc7da569b Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Wed, 3 Dec 2025 12:40:48 +0100
-Subject: [PATCH 22/27] can: isotp: introduce isotp_invalid_canid() to verify
+Subject: [PATCH 23/28] can: isotp: introduce isotp_invalid_canid() to verify
  proper CAN-IDs
 
 Move duplicated code into a separate function as preparation for the
@@ -13,7 +13,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 22 insertions(+), 19 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index c4da820..077c2a1 100644
+index e257f0c..0ecf59c 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -1569,6 +1569,23 @@ static int isotp_release(struct socket *sock)

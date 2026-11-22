@@ -1,7 +1,7 @@
-From 9f8c277b07976f40bedff387ded6359c4b975f35 Mon Sep 17 00:00:00 2001
+From 1171e60cc22afa725834527c70ca7eaa9c038805 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 21 Nov 2026 08:44:26 +0000
-Subject: [PATCH 17/27] can: isotp: check the minimum FF_DL
+Subject: [PATCH 18/28] can: isotp: check the minimum FF_DL
 
 ISO 15765-2 requires FF_DL >= FF_DLmin: a PDU that fits into a SF must
 not be segmented. The rx check only ensured that a CF is needed and
@@ -18,7 +18,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index c5358e5..b71bb26 100644
+index 542e3e5..14d1e95 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -575,8 +575,8 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
