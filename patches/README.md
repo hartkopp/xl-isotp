@@ -243,8 +243,9 @@ Patches 1 bis 26:
   XL-N_PDU lehnt `isotp_bind()` ab. Beim Empfang dekodiert eine FD-N_PDU
   einen SF mit CAN_DL > 8 nur mit dem FD-Escape (N_PCI `0x00`), eine
   XL-N_PDU nur mit dem XL-SF-Flag. FD-N_PDUs müssen auch mit SDT 9 eine
-  gültige FD-Länge haben, und XL-N_PDUs (LL_DL > 8) werden nicht auf
-  Padding geprüft. Wie bei CC/FD prüft der Empfang nur, ob die Daten im
+  gültige FD-Länge haben. Die Padding-Prüfungen beim Empfang
+  (`RX_PADDING`, `CHK_PAD_*`) bleiben unverändert und folgen auch bei
+  XL-N_PDUs den CC/FD-Regeln. Wie bei CC/FD prüft der Empfang nur, ob die Daten im
   Frame enthalten sind, nicht die genaue Frame-Länge (ein Sender, der
   trotzdem auffüllt, wird also auch ohne Padding-Prüfung akzeptiert).
 - Patch 31 setzt den wirksamen TX_DL erst in `isotp_bind()` (XL-Modus:
