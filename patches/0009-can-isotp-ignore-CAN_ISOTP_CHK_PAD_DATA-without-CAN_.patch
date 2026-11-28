@@ -1,0 +1,45 @@
+From d4aa4322f101783239a13084d2aa6715d1be91b7 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Sun, 22 Nov 2026 12:48:49 +0000
+Subject: [PATCH 09/23] can: isotp: ignore CAN_ISOTP_CHK_PAD_DATA without
+ CAN_ISOTP_RX_PADDING
+
+CAN_ISOTP_CHK_PAD_DATA checks the padding bytes of received frames
+against the rxpad_content, which is only defined together with
+CAN_ISOTP_RX_PADDING. iso15765-2.rst documents that CAN_ISOTP_CHK_PAD_DATA
+is ignored when CAN_ISOTP_RX_PADDING is not specified.
+
+Together with CAN_ISOTP_CHK_PAD_LEN the flag is ignored as documented and
+only the optimized frame length is checked. But when
+CAN_ISOTP_CHK_PAD_DATA is set without CAN_ISOTP_RX_PADDING and without
+CAN_ISOTP_CHK_PAD_LEN, check_pad() does not ignore the flag but rejects
+every received frame: SFs and the last CF of a PDU are dropped with
+EBADMSG and every FC aborts the transmission with EBADMSG.
+
+Ignore CAN_ISOTP_CHK_PAD_DATA without CAN_ISOTP_RX_PADDING in this case
+as well, as documented. This only affects a misconfiguration that has
+never been able to receive any PDU. Therefore the patch has no Fixes tag.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 6540dc2..2e019e1 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -422,8 +422,8 @@ static int check_pad(struct isotp_sock *so, struct canfd_frame *cf,
+ 		if (so->opt.flags & CAN_ISOTP_CHK_PAD_LEN)
+ 			return check_optimized(cf, start_index);
+ 
+-		/* no valid test against empty value => ignore frame */
+-		return 1;
++		/* no rx padding content => ignore CAN_ISOTP_CHK_PAD_DATA */
++		return 0;
+ 	}
+ 
+ 	/* check datalength of correctly padded CAN frame */
+-- 
+2.43.0
+

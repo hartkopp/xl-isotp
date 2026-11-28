@@ -1,4 +1,4 @@
-From a930a89805e18dcfbca3766496e218011e792c2c Mon Sep 17 00:00:00 2001
+From 97e7557b741c475f239359c55efb5e4dc9a8e038 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Wed, 3 Dec 2025 12:40:48 +0100
 Subject: [PATCH 18/23] can: isotp: introduce isotp_invalid_canid() to verify
@@ -13,7 +13,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 22 insertions(+), 19 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 058fdf4..ced6b0b 100644
+index 34a6edb..4e48e15 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -1575,6 +1575,23 @@ static int isotp_release(struct socket *sock)

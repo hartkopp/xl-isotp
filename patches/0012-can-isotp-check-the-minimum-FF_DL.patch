@@ -1,4 +1,4 @@
-From ab23f4a22b25e83bd520edce724378a2bd648f51 Mon Sep 17 00:00:00 2001
+From bceed227e47a881abed215687e57e9ad286857cb Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 21 Nov 2026 08:44:26 +0000
 Subject: [PATCH 12/23] can: isotp: check the minimum FF_DL
@@ -18,7 +18,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 5e66736..4822bcc 100644
+index 8905732..303ac29 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -575,8 +575,8 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,

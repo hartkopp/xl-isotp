@@ -1,4 +1,4 @@
-From 1039f0a2c0fec706cb47a02179853740d938a6d6 Mon Sep 17 00:00:00 2001
+From 52389b7830ce30741fa5ef9bd4a1ac6101d72717 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 18:47:54 +0100
 Subject: [PATCH 19/23] can: isotp: rename variable for the required content
@@ -13,7 +13,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index ced6b0b..8531b19 100644
+index 4e48e15..8523d1f 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -871,13 +871,13 @@ static void isotp_fill_dataframe(struct canfd_frame *cf, struct isotp_sock *so,

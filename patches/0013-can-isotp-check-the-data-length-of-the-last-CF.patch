@@ -1,4 +1,4 @@
-From 7aa10f38c34f59ffef57eb9d5d041f721917cbd5 Mon Sep 17 00:00:00 2001
+From 09336cc144b564ae0df13cf17f3f081d04e60ce4 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:37 +0000
 Subject: [PATCH 13/23] can: isotp: check the data length of the last CF
@@ -19,7 +19,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 4822bcc..46f4278 100644
+index 303ac29..813ca4c 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -674,8 +674,10 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
