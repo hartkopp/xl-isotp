@@ -80,6 +80,7 @@ Closes: https://lore.kernel.org/linux-can/cover.1793089479.git.zihanx@nebusec.ai
 Link: https://lore.kernel.org/linux-can/350df96b-5f69-490e-b39e-ed6e9bca4754@hartkopp.net/
 Cc: Oleksij Rempel <o.rempel@pengutronix.de>
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+Acked-by: Oleksij Rempel <o.rempel@pengutronix.de>
 ---
  net/can/af_can.c       | 12 +++++++-----
  net/can/bcm.c          | 10 +++++-----
