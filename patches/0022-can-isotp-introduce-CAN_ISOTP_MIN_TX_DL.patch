@@ -1,4 +1,4 @@
-From 1c7626c442efca5f6d89a78e0f1aaecf57973629 Mon Sep 17 00:00:00 2001
+From b07f6fbf49fe15d07e8a5e7da2051b56afc4f194 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:36:24 +0100
 Subject: [PATCH 22/22] can: isotp: introduce CAN_ISOTP_MIN_TX_DL
@@ -29,7 +29,7 @@ index eb8b529..fdace3a 100644
  
  /*
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 7c4f05d..11c3ddb 100644
+index 4ba3afc..9b490bc 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -404,7 +404,7 @@ static bool chk_optimized_fail(struct canfd_frame *cf, int start_index)
@@ -52,7 +52,7 @@ index 7c4f05d..11c3ddb 100644
  	else
  		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
  
-@@ -1230,7 +1230,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1231,7 +1231,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  	}
  
  	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
@@ -61,7 +61,7 @@ index 7c4f05d..11c3ddb 100644
  
  	/* does the given data fit into a single frame for SF_BROADCAST? */
  	if ((isotp_bc_flags(so) == CAN_ISOTP_SF_BROADCAST) &&
-@@ -1291,7 +1291,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1292,7 +1292,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  		 * This prevents a protocol caused length extension from
  		 * CAN_DL = 8 to CAN_DL = 12 due to the SF_SL ESC handling.
  		 */
