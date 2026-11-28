@@ -1,0 +1,62 @@
+From 05167d6888d548ceed61900cb8798b1638f61e29 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Sat, 21 Nov 2026 08:44:26 +0000
+Subject: [PATCH 13/22] can: isotp: check the minimum FF_DL
+
+ISO 15765-2 requires FF_DL >= FF_DLmin: a PDU that fits into a SF must
+not be segmented.
+
+The rx check in isotp_rcv_ff() added a SF_DL escape offset for LL_DL > 8
+on the wrong side and only rejected FF_DL < LL_DL - ae - off - ff_pci_sz.
+So it did not even ensure that a CF is needed. It accepted FFs whose
+FF_DL fits into the FF itself (e.g. FF_DL 6 for LL_DL 8, FF_DL 61 and 62
+for LL_DL 64) and FFs whose FF_DL fits into a SF (e.g. FF_DL 7 for
+LL_DL 8). In both cases the receiver sent a FC and waited for a CF that
+a compliant sender never sends.
+
+Check the FF_DL against the maximum SF_DL of the sender LL_DL like
+isotp_sendmsg() does on the tx path. As only FF_DL is on the left side
+the check does not wrap around for FF_DL values close to 2^32.
+
+As only FFs from a non-compliant sender are affected and the copied FF
+data stays within the receive buffer, there is no Fixes tag.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index e73e996..e1e6f94 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -579,8 +579,8 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
+ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ {
+ 	struct isotp_sock *so = isotp_sk(sk);
++	unsigned int sf_max;
+ 	int i;
+-	int off;
+ 	int ff_pci_sz;
+ 
+ 	hrtimer_cancel(&so->rxtimer);
+@@ -613,10 +613,13 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 			return 1;
+ 	}
+ 
+-	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
+-	off = (so->rx.ll_dl > CAN_MAX_DLEN) ? 1 : 0;
++	/* the PDU must not fit into a SF (FF_DLmin) */
++	if (so->rx.ll_dl == CAN_MAX_DLEN)
++		sf_max = CAN_MAX_DLEN - SF_PCI_SZ4 - ae;
++	else
++		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
+ 
+-	if (so->rx.len + ae + off + ff_pci_sz < so->rx.ll_dl)
++	if (so->rx.len <= sf_max)
+ 		return 1;
+ 
+ 	/* PDU size > default => try max_pdu_size
+-- 
+2.43.0
+

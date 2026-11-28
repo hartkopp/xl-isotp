@@ -1,0 +1,47 @@
+From ec92c32bf8971e61f22f83d9af07e18d6e4ac5f4 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Sun, 22 Nov 2026 11:56:13 +0000
+Subject: [PATCH 09/22] can: isotp: reject reserved STmin values in
+ CAN_ISOTP_RECV_FC
+
+The STmin value of struct can_isotp_fc_options is sent in the flow
+control frames of the receiver. ISO 15765-2 reserves the values 0x80 -
+0xF0 and 0xFA - 0xFF, but CAN_ISOTP_RECV_FC accepted any value and the
+reserved values were sent on the bus. The sender side replaces received
+reserved values with 0x7F already.
+
+Reject the reserved STmin values with -EINVAL before the options are
+applied.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index ea3790a..22bfc1c 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -1770,9 +1770,17 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ 		break;
+ 	}
+ 
+-	case CAN_ISOTP_RECV_FC:
+-		memcpy(&so->rxfc, val, sizeof(so->rxfc));
++	case CAN_ISOTP_RECV_FC: {
++		const struct can_isotp_fc_options *fc = val;
++
++		/* reject the reserved STmin values 0x80 - 0xF0, 0xFA - 0xFF */
++		if (fc->stmin > 0x7F &&
++		    (fc->stmin < 0xF1 || fc->stmin > 0xF9))
++			return -EINVAL;
++
++		memcpy(&so->rxfc, fc, sizeof(*fc));
+ 		break;
++	}
+ 
+ 	case CAN_ISOTP_TX_STMIN:
+ 		so->force_tx_stmin = *(const u32 *)val;
+-- 
+2.43.0
+

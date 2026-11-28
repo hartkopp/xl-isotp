@@ -1,0 +1,65 @@
+From 8feac84c9cc0cfa70fb94a6447f9e9af51b8df3b Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Tue, 16 Dec 2025 19:36:24 +0100
+Subject: [PATCH 22/22] can: isotp: introduce CAN_ISOTP_MIN_TX_DL
+
+The minimum TX_DL value is 8 and the CAN_MAX_DLEN is also 8.
+To not mix the intention and context of the defines introduce a separate
+CAN_ISOTP_MIN_TX_DL definition to perform TX_DL related checks.
+
+Use CAN_ISOTP_MIN_TX_DL where a TX_DL or LL_DL value is checked and keep
+CAN_MAX_DLEN for the checks of the CAN_DL of a CAN frame.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ include/uapi/linux/can/isotp.h | 6 +++++-
+ net/can/isotp.c                | 6 +++---
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/include/uapi/linux/can/isotp.h b/include/uapi/linux/can/isotp.h
+index eb8b529..73d0dca 100644
+--- a/include/uapi/linux/can/isotp.h
++++ b/include/uapi/linux/can/isotp.h
+@@ -163,10 +163,14 @@ struct can_isotp_ll_options {
+  * consistency and copied directly into the flow control (FC) frame.
+  */
+ 
++/* minimum TX_DL value (link layer data length of a Classical CAN frame) */
++
++#define CAN_ISOTP_MIN_TX_DL		CAN_MAX_DLEN
++
+ /* link layer default values => make use of Classical CAN frames */
+ 
+ #define CAN_ISOTP_DEFAULT_LL_MTU	CAN_MTU
+-#define CAN_ISOTP_DEFAULT_LL_TX_DL	CAN_MAX_DLEN
++#define CAN_ISOTP_DEFAULT_LL_TX_DL	CAN_ISOTP_MIN_TX_DL
+ #define CAN_ISOTP_DEFAULT_LL_TX_FLAGS	0
+ 
+ /*
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 2a74a1c..330832e 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -612,8 +612,8 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 	}
+ 
+ 	/* the PDU must not fit into a SF (FF_DLmin) */
+-	if (so->rx.ll_dl == CAN_MAX_DLEN)
+-		sf_max = CAN_MAX_DLEN - SF_PCI_SZ4 - ae;
++	if (so->rx.ll_dl == CAN_ISOTP_MIN_TX_DL)
++		sf_max = CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae;
+ 	else
+ 		sf_max = so->rx.ll_dl - SF_PCI_SZ8 - ae;
+ 
+@@ -1221,7 +1221,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 	}
+ 
+ 	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
+-	off = (so->tx.ll_dl > CAN_MAX_DLEN) ? 1 : 0;
++	off = (so->tx.ll_dl > CAN_ISOTP_MIN_TX_DL) ? 1 : 0;
+ 
+ 	/* does the given data fit into a single frame for SF_BROADCAST? */
+ 	if ((isotp_bc_flags(so) == CAN_ISOTP_SF_BROADCAST) &&
+-- 
+2.43.0
+

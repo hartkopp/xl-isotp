@@ -1,0 +1,87 @@
+From acca51c321021ea169ff6d4adbf5899a38fc0285 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Sat, 28 Nov 2026 11:46:03 +0000
+Subject: [PATCH 06/22] can: isotp: add the frame transmission time to the CF
+ broadcast gap
+
+With flow control the gap between the consecutive frames is the frame
+transmission time (N_As) plus the minimum separation time (N_Cs). N_Cs is
+the STmin value from the received FC or the value of the
+CAN_ISOTP_TX_STMIN socket option when the CAN_ISOTP_FORCE_TXSTMIN flag is
+set.
+
+In CAN_ISOTP_CF_BROADCAST mode there is no FC and the gap is set in
+isotp_sendmsg(). With the CAN_ISOTP_FORCE_TXSTMIN flag only the value of
+the CAN_ISOTP_TX_STMIN socket option is used and the frame transmission
+time is missing.
+
+Add the frame transmission time to the CF broadcast gap in both cases
+like in the flow control mode and document the gap in iso15765-2.rst.
+
+Additionally fix the unit of the values of the CAN_ISOTP_TX_STMIN and
+CAN_ISOTP_RX_STMIN socket options in iso15765-2.rst. Both values are
+handled in nanoseconds by the implementation, as documented in isotp.h.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ Documentation/networking/iso15765-2.rst | 9 ++++++---
+ net/can/isotp.c                         | 8 ++++----
+ 2 files changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/Documentation/networking/iso15765-2.rst b/Documentation/networking/iso15765-2.rst
+index 37ebb2c..badcd16 100644
+--- a/Documentation/networking/iso15765-2.rst
++++ b/Documentation/networking/iso15765-2.rst
+@@ -199,7 +199,10 @@ where the ``can_isotp_options`` structure has the following contents:
+     specified alongside ``CAN_ISOTP_CF_BROADCAST``).
+ 
+   * ``CAN_ISOTP_CF_BROADCAST``: use 1-to-N transmission without flow control
+-    (cannot be specified alongside ``CAN_ISOTP_SF_BROADCAST``).
++    (cannot be specified alongside ``CAN_ISOTP_SF_BROADCAST``). The gap
++    between the consecutive frames is ``frame_txtime`` plus the value of the
++    ``CAN_ISOTP_TX_STMIN`` socket option when the ``CAN_ISOTP_FORCE_TXSTMIN``
++    flag is set.
+     NOTE: this is not covered by the ISO 15765-2 standard.
+ 
+   * ``CAN_ISOTP_DYN_FC_PARMS``: enable dynamic update of flow control
+@@ -286,7 +289,7 @@ Transmission stmin
+ ~~~~~~~~~~~~~~~~~~
+ 
+ The transmission minimum separation time (stmin) can be forced using the
+-``CAN_ISOTP_TX_STMIN`` optname and providing an stmin value in microseconds as
++``CAN_ISOTP_TX_STMIN`` optname and providing an stmin value in nanoseconds as
+ a 32bit unsigned integer; this will overwrite the value sent by the receiver in
+ flow control frames:
+ 
+@@ -299,7 +302,7 @@ Reception stmin
+ ~~~~~~~~~~~~~~~
+ 
+ The reception minimum separation time (stmin) can be forced using the
+-``CAN_ISOTP_RX_STMIN`` optname and providing an stmin value in microseconds as
++``CAN_ISOTP_RX_STMIN`` optname and providing an stmin value in nanoseconds as
+ a 32bit unsigned integer; received Consecutive Frames (CF) which timestamps
+ differ less than this value will be ignored:
+ 
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 8817f0e..7b88b3a 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -1292,11 +1292,11 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 		isotp_create_fframe(cf, so, ae);
+ 
+ 		if (isotp_bc_flags(so) == CAN_ISOTP_CF_BROADCAST) {
+-			/* set timer for FC-less operation (STmin = 0) */
++			/* set timer for FC-less operation (N_As + N_Cs) */
++			so->tx_gap = ktime_set(0, so->frame_txtime);
+ 			if (so->opt.flags & CAN_ISOTP_FORCE_TXSTMIN)
+-				so->tx_gap = ktime_set(0, so->force_tx_stmin);
+-			else
+-				so->tx_gap = ktime_set(0, so->frame_txtime);
++				so->tx_gap = ktime_add_ns(so->tx_gap,
++							  so->force_tx_stmin);
+ 
+ 			/* disable wait for FCs due to activated block size */
+ 			so->txfc.bs = 0;
+-- 
+2.43.0
+

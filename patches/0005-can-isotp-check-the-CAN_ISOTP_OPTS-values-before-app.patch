@@ -1,0 +1,74 @@
+From 1f741973a2680ab70ea6b68916cf36059adce594 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 13:13:51 +0000
+Subject: [PATCH 05/22] can: isotp: check the CAN_ISOTP_OPTS values before
+ applying them
+
+isotp_setsockopt_locked() copies the CAN_ISOTP_OPTS values into so->opt
+before it checks them. When CAN_ISOTP_SF_BROADCAST and
+CAN_ISOTP_CF_BROADCAST are set together, CAN_ISOTP_CF_BROADCAST is
+removed and the remaining options are applied, although -EINVAL is
+returned to give user feedback on the wrong configuration.
+
+Since commit "can: isotp: use a private mutex instead of lock_sock()"
+the option values are copied from user space into a local buffer before
+conf_lock is taken. Check the broadcast flags in this copy and reject an
+invalid combination before so->opt is changed. A rejected setsockopt()
+now leaves all socket options untouched instead of applying a modified
+set of options.
+
+Use hweight32() to check that only one of the broadcast flags is set, so
+that further broadcast flags can be added to ISOTP_ALL_BC_FLAGS without
+changing the check.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 20 +++++++++-----------
+ 1 file changed, 9 insertions(+), 11 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 650d93e..8817f0e 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -1740,22 +1740,19 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ 		return -EAGAIN;
+ 
+ 	switch (optname) {
+-	case CAN_ISOTP_OPTS:
+-		memcpy(&so->opt, val, sizeof(so->opt));
++	case CAN_ISOTP_OPTS: {
++		const struct can_isotp_options *opt = val;
++
++		/* only one broadcast flag at a time */
++		if (hweight32(opt->flags & ISOTP_ALL_BC_FLAGS) > 1)
++			return -EINVAL;
++
++		memcpy(&so->opt, opt, sizeof(*opt));
+ 
+ 		/* no separate rx_ext_address is given => use ext_address */
+ 		if (!(so->opt.flags & CAN_ISOTP_RX_EXT_ADDR))
+ 			so->opt.rx_ext_address = so->opt.ext_address;
+ 
+-		/* these broadcast flags are not allowed together */
+-		if (isotp_bc_flags(so) == ISOTP_ALL_BC_FLAGS) {
+-			/* CAN_ISOTP_SF_BROADCAST is prioritized */
+-			so->opt.flags &= ~CAN_ISOTP_CF_BROADCAST;
+-
+-			/* give user feedback on wrong config attempt */
+-			ret = -EINVAL;
+-		}
+-
+ 		/* check for frame_txtime changes (0 => no changes) */
+ 		if (so->opt.frame_txtime) {
+ 			if (so->opt.frame_txtime == CAN_ISOTP_FRAME_TXTIME_ZERO)
+@@ -1764,6 +1761,7 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ 				so->frame_txtime = so->opt.frame_txtime;
+ 		}
+ 		break;
++	}
+ 
+ 	case CAN_ISOTP_RECV_FC:
+ 		memcpy(&so->rxfc, val, sizeof(so->rxfc));
+-- 
+2.43.0
+

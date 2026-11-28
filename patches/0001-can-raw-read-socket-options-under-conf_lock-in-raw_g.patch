@@ -1,0 +1,174 @@
+From c92bbc41e2c5914fda38396999d3ce4ae62cc0d8 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 13 Nov 2026 10:59:58 +0000
+Subject: [PATCH 01/22] can: raw: read socket options under conf_lock in
+ raw_getsockopt()
+
+raw_getsockopt() only takes conf_lock for CAN_RAW_FILTER. All other
+CAN_RAW socket options are read without the mutex, while
+raw_setsockopt() updates them under conf_lock. CAN_RAW_XL_VCID_OPTS is
+even copied to user space directly from the socket, so a concurrent
+setsockopt() can lead to a mix of old and new values.
+
+Read the option values under conf_lock into a local variable and copy
+them to user space after mutex_unlock(), like raw_setsockopt() does it
+in the other direction. So no user space access happens while the
+mutex is held and a stalled copy can not block raw_notify() under RTNL.
+
+CAN_RAW_FILTER is handled in front of the switch statement, as it takes
+the mutex on its own for the duplication of the filters. Its code is
+not changed.
+
+The socket options have been read without a lock before commit
+"can: raw: use a private mutex instead of lock_sock()" as well, so this
+is no fix. As the only visible change, a failing copy to user space for
+CAN_RAW_XL_VCID_OPTS now returns the clamped option length together
+with -EFAULT, like the other socket options.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/raw.c | 64 ++++++++++++++++++++++++++-------------------------
+ 1 file changed, 33 insertions(+), 31 deletions(-)
+
+diff --git a/net/can/raw.c b/net/can/raw.c
+index b69eaad..cf17704 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -103,7 +103,7 @@ struct raw_sock {
+ 	struct can_filter dfilter; /* default/single filter */
+ 	struct can_filter *filter; /* pointer to filter(s) */
+ 	struct uniqframe __percpu *uniq;
+-	struct mutex conf_lock; /* protects bind, filters and setsockopt */
++	struct mutex conf_lock; /* protects bind, filters and sockopts */
+ };
+ 
+ static LIST_HEAD(raw_notifier_list);
+@@ -819,9 +819,13 @@ static int raw_getsockopt(struct socket *sock, int level, int optname,
+ {
+ 	struct sock *sk = sock->sk;
+ 	struct raw_sock *ro = raw_sk(sk);
+-	int flag;
++	union {
++		can_err_mask_t err_mask;
++		int flag;
++		struct can_raw_vcid_options vcid_opts;
++	} val;
+ 	int len;
+-	void *val;
++	int err = 0;
+ 
+ 	if (level != SOL_CAN_RAW)
+ 		return -EINVAL;
+@@ -829,10 +833,8 @@ static int raw_getsockopt(struct socket *sock, int level, int optname,
+ 	if (len < 0)
+ 		return -EINVAL;
+ 
+-	switch (optname) {
+-	case CAN_RAW_FILTER: {
++	if (optname == CAN_RAW_FILTER) {
+ 		struct can_filter *filter = NULL;
+-		int err = 0;
+ 
+ 		mutex_lock(&ro->conf_lock);
+ 		if (ro->count > 0) {
+@@ -866,72 +868,72 @@ static int raw_getsockopt(struct socket *sock, int level, int optname,
+ 			opt->optlen = len;
+ 		return err;
+ 	}
++
++	/* Read the option value under ro->conf_lock and copy it to user
++	 * space after mutex_unlock(), see raw_setsockopt().
++	 */
++	mutex_lock(&ro->conf_lock);
++
++	switch (optname) {
+ 	case CAN_RAW_ERR_FILTER:
+ 		if (len > sizeof(can_err_mask_t))
+ 			len = sizeof(can_err_mask_t);
+-		val = &ro->err_mask;
++		val.err_mask = ro->err_mask;
+ 		break;
+ 
+ 	case CAN_RAW_LOOPBACK:
+ 		if (len > sizeof(int))
+ 			len = sizeof(int);
+-		flag = ro->loopback;
+-		val = &flag;
++		val.flag = ro->loopback;
+ 		break;
+ 
+ 	case CAN_RAW_RECV_OWN_MSGS:
+ 		if (len > sizeof(int))
+ 			len = sizeof(int);
+-		flag = ro->recv_own_msgs;
+-		val = &flag;
++		val.flag = ro->recv_own_msgs;
+ 		break;
+ 
+ 	case CAN_RAW_FD_FRAMES:
+ 		if (len > sizeof(int))
+ 			len = sizeof(int);
+-		flag = ro->fd_frames;
+-		val = &flag;
++		val.flag = ro->fd_frames;
+ 		break;
+ 
+ 	case CAN_RAW_XL_FRAMES:
+ 		if (len > sizeof(int))
+ 			len = sizeof(int);
+-		flag = ro->xl_frames;
+-		val = &flag;
++		val.flag = ro->xl_frames;
+ 		break;
+ 
+-	case CAN_RAW_XL_VCID_OPTS: {
+-		int err = 0;
+-
++	case CAN_RAW_XL_VCID_OPTS:
+ 		/* user space buffer to small for VCID opts? */
+ 		if (len < sizeof(ro->raw_vcid_opts)) {
+ 			/* return -ERANGE and needed space in optlen */
+ 			err = -ERANGE;
+ 			opt->optlen = sizeof(ro->raw_vcid_opts);
+ 		} else {
+-			if (len > sizeof(ro->raw_vcid_opts))
+-				len = sizeof(ro->raw_vcid_opts);
+-			if (copy_to_iter(&ro->raw_vcid_opts, len,
+-					 &opt->iter_out) != len)
+-				err = -EFAULT;
++			len = sizeof(ro->raw_vcid_opts);
++			val.vcid_opts = ro->raw_vcid_opts;
+ 		}
+-		if (!err)
+-			opt->optlen = len;
+-		return err;
+-	}
++		break;
++
+ 	case CAN_RAW_JOIN_FILTERS:
+ 		if (len > sizeof(int))
+ 			len = sizeof(int);
+-		flag = ro->join_filters;
+-		val = &flag;
++		val.flag = ro->join_filters;
+ 		break;
+ 
+ 	default:
+-		return -ENOPROTOOPT;
++		err = -ENOPROTOOPT;
+ 	}
+ 
++	mutex_unlock(&ro->conf_lock);
++
++	if (err)
++		return err;
++
+ 	opt->optlen = len;
+-	if (copy_to_iter(val, len, &opt->iter_out) != len)
++	if (copy_to_iter(&val, len, &opt->iter_out) != len)
+ 		return -EFAULT;
+ 	return 0;
+ }
+-- 
+2.43.0
+

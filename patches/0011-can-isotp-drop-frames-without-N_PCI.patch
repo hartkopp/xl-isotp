@@ -1,0 +1,40 @@
+From 5423f4ec9c35be66592c61cb2da2ccd7ca5e7337 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 20 Nov 2026 20:33:36 +0000
+Subject: [PATCH 11/22] can: isotp: drop frames without N_PCI
+
+isotp_rcv() reads the address extension and the N_PCI without checking
+the CAN frame data length. So frames with CAN_DL < ae + N_PCI_SZ are
+processed with the data bytes beyond CAN_DL, e.g. as SF, CF or FC.
+
+As the data of the CAN frame structure is always present, the reads stay
+within the skb. But with the zero-filled data from CAN drivers a frame
+with CAN_DL 0 was processed as SF with SF_DL 0, which terminated an
+ongoing reception.
+
+Drop these frames as they are no valid N_PDUs. As only invalid frames
+are affected, there is no Fixes tag.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index b237b1f..798c1b4 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -775,6 +775,10 @@ static void isotp_rcv(struct sk_buff *skb, void *data)
+ 
+ 	cf = (struct canfd_frame *)skb->data;
+ 
++	/* frames without N_PCI (and AE) are no N_PDUs */
++	if (cf->len < ae + N_PCI_SZ)
++		return;
++
+ 	/* if enabled: check reception of my configured extended address */
+ 	if (ae && cf->data[0] != so->opt.rx_ext_address)
+ 		return;
+-- 
+2.43.0
+

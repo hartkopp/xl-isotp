@@ -1,0 +1,90 @@
+From 0caa1a52391e2459441d6f4e4923ac765d2dfab6 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Sun, 22 Nov 2026 11:11:29 +0000
+Subject: [PATCH 08/22] can: isotp: check the CAN FD tx_flags in
+ CAN_ISOTP_LL_OPTS
+
+The tx_flags of struct can_isotp_ll_options are set into the flags of
+the created CAN FD frames. For CAN CC they have to be zero but for CAN
+FD any value was accepted and copied into the CAN FD frames, including
+CANFD_ESI and undefined flags.
+
+For the ISO-TP transmission only the bit rate switch (CANFD_BRS) is a
+relevant property of the CAN FD frames. The error state indicator
+(CANFD_ESI) reflects the error state of the transmitting CAN controller
+and is no transmission parameter of the ISO-TP protocol.
+
+This is an intentional tightening of the uAPI and no bug fix: accept
+CANFD_BRS and the CANFD_FDF marker (which is set by the CAN core anyway)
+and reject other tx_flags with -EINVAL. CAN FD frames with CANFD_ESI
+can still be sent with CAN_RAW sockets, e.g. for testing purposes.
+
+The CAN core sets the CANFD_FDF marker in the CAN FD frames when they
+are sent. Add CANFD_FDF to the stored tx_flags for CAN FD already in
+setsockopt(), so that getsockopt() returns the flags of the created CAN
+FD frames. The CAN frames on the bus are not changed by this.
+
+Document the accepted tx_flags in isotp.h and iso15765-2.rst.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ Documentation/networking/iso15765-2.rst | 6 +++++-
+ include/uapi/linux/can/isotp.h          | 2 ++
+ net/can/isotp.c                         | 9 +++++++++
+ 3 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/networking/iso15765-2.rst b/Documentation/networking/iso15765-2.rst
+index 1962209..1cbe488 100644
+--- a/Documentation/networking/iso15765-2.rst
++++ b/Documentation/networking/iso15765-2.rst
+@@ -287,7 +287,11 @@ where the ``can_isotp_ll_options`` structure has the following contents:
+   traffic (i.e.: ``mtu = CANFD_MTU``).
+ 
+ * ``tx_flags``: flags set into ``struct canfd_frame.flags`` at frame creation.
+-  Only applies to CAN FD traffic (i.e.: ``mtu = CANFD_MTU``).
++  Only applies to CAN FD traffic (i.e.: ``mtu = CANFD_MTU``) and has to be
++  ``0`` for classical CAN frames. Only the ``CANFD_BRS`` flag (and the
++  ``CANFD_FDF`` marker) can be set, other flags are rejected with ``-EINVAL``.
++  The ``CANFD_FDF`` marker is always added for CAN FD traffic, so that
++  ``getsockopt()`` returns the flags of the created CAN FD frames.
+ 
+ Transmission stmin
+ ~~~~~~~~~~~~~~~~~~
+diff --git a/include/uapi/linux/can/isotp.h b/include/uapi/linux/can/isotp.h
+index a2e5aa6..eb8b529 100644
+--- a/include/uapi/linux/can/isotp.h
++++ b/include/uapi/linux/can/isotp.h
+@@ -119,6 +119,8 @@ struct can_isotp_ll_options {
+ 
+ 	__u8  tx_flags;		/* set into struct canfd_frame.flags	*/
+ 				/* at frame creation: e.g. CANFD_BRS	*/
++				/* only CANFD_BRS and CANFD_FDF allowed */
++				/* CANFD_FDF is always set for CAN FD	*/
+ 				/* Obsolete when the BRS flag is fixed	*/
+ 				/* by the CAN netdriver configuration	*/
+ };
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index ce541e5..ea3790a 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -1796,8 +1796,17 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+ 		    (ll->tx_dl > CAN_MAX_DLEN || ll->tx_flags != 0))
+ 			return -EINVAL;
+ 
++		/* only CANFD_BRS (and the CANFD_FDF marker) for CAN FD frames */
++		if (ll->mtu == CANFD_MTU &&
++		    (ll->tx_flags & ~(CANFD_BRS | CANFD_FDF)))
++			return -EINVAL;
++
+ 		memcpy(&so->ll, ll, sizeof(*ll));
+ 
++		/* CAN FD frames are always marked with CANFD_FDF */
++		if (so->ll.mtu == CANFD_MTU)
++			so->ll.tx_flags |= CANFD_FDF;
++
+ 		/* set ll_dl for tx path to similar place as for rx */
+ 		so->tx.ll_dl = ll->tx_dl;
+ 		break;
+-- 
+2.43.0
+
