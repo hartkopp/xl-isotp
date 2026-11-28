@@ -1,7 +1,7 @@
 From 17aa804da4728f5b3704cbeeb911589eecce7b48 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 21:10:39 +0000
-Subject: [PATCH 04/23] can: isotp: do not send FC.OVFLW in listen mode
+Subject: [PATCH 04/22] can: isotp: do not send FC.OVFLW in listen mode
 
 isotp_rcv_ff() sends a FC with overflow status when the FF_DL exceeds
 the receive buffer before CAN_ISOTP_LISTEN_MODE is checked. So a socket

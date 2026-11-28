@@ -1,7 +1,7 @@
-From 68a84cee98db1afa53c2652a7a022ddf366c8c93 Mon Sep 17 00:00:00 2001
+From 58ab3991dc0c8aa73bf0b27ba2587316f3c5c991 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Wed, 18 Nov 2026 12:00:59 +0000
-Subject: [PATCH 16/23] can: isotp: drop inline keyword, let the compiler
+Subject: [PATCH 15/22] can: isotp: drop inline keyword, let the compiler
  decide
 
 Modern kernel style avoids forcing inlining via the inline keyword on
@@ -13,7 +13,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index a9bc89a..fa37032 100644
+index 3c10a14..0780a0e 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -249,7 +249,7 @@ static bool isotp_tx_gen_done(struct isotp_sock *so, u32 gen)

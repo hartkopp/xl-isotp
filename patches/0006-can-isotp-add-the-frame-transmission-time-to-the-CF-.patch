@@ -1,7 +1,7 @@
 From acca51c321021ea169ff6d4adbf5899a38fc0285 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 28 Nov 2026 11:46:03 +0000
-Subject: [PATCH 06/23] can: isotp: add the frame transmission time to the CF
+Subject: [PATCH 06/22] can: isotp: add the frame transmission time to the CF
  broadcast gap
 
 With flow control the gap between the consecutive frames is the frame

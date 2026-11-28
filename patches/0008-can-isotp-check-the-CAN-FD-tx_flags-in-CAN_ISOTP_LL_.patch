@@ -1,7 +1,7 @@
 From 0caa1a52391e2459441d6f4e4923ac765d2dfab6 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 11:11:29 +0000
-Subject: [PATCH 08/23] can: isotp: check the CAN FD tx_flags in
+Subject: [PATCH 08/22] can: isotp: check the CAN FD tx_flags in
  CAN_ISOTP_LL_OPTS
 
 The tx_flags of struct can_isotp_ll_options are set into the flags of

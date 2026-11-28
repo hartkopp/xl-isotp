@@ -1,7 +1,7 @@
 From 1508429f6d9f3d1757a41c23a813286eb2b84d3a Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 12:48:49 +0000
-Subject: [PATCH 10/23] can: isotp: ignore CAN_ISOTP_CHK_PAD_DATA without
+Subject: [PATCH 10/22] can: isotp: ignore CAN_ISOTP_CHK_PAD_DATA without
  CAN_ISOTP_RX_PADDING
 
 CAN_ISOTP_CHK_PAD_DATA checks the padding bytes of received frames

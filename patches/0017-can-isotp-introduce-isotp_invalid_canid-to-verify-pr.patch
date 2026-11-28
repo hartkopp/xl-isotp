@@ -1,7 +1,7 @@
-From 6bdfaa239e8e0c136e1935d4d7b496360966afe5 Mon Sep 17 00:00:00 2001
+From d960ac3ef35f0b5883ede81aa1dcbbe149fa0f88 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Wed, 3 Dec 2025 12:40:48 +0100
-Subject: [PATCH 18/23] can: isotp: introduce isotp_invalid_canid() to verify
+Subject: [PATCH 17/22] can: isotp: introduce isotp_invalid_canid() to verify
  proper CAN-IDs
 
 Move duplicated code into a separate function as preparation for the
@@ -13,10 +13,10 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 22 insertions(+), 19 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 34a6edb..4e48e15 100644
+index 384ff0c..9fbcf94 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
-@@ -1575,6 +1575,23 @@ static int isotp_release(struct socket *sock)
+@@ -1569,6 +1569,23 @@ static int isotp_release(struct socket *sock)
  	return 0;
  }
  
@@ -40,7 +40,7 @@ index 34a6edb..4e48e15 100644
  static int isotp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int len)
  {
  	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
-@@ -1593,27 +1610,13 @@ static int isotp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int l
+@@ -1587,27 +1604,13 @@ static int isotp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int l
  	if (addr->can_family != AF_CAN)
  		return -EINVAL;
  

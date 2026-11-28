@@ -1,7 +1,7 @@
 From 1f741973a2680ab70ea6b68916cf36059adce594 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 13:13:51 +0000
-Subject: [PATCH 05/23] can: isotp: check the CAN_ISOTP_OPTS values before
+Subject: [PATCH 05/22] can: isotp: check the CAN_ISOTP_OPTS values before
  applying them
 
 isotp_setsockopt_locked() copies the CAN_ISOTP_OPTS values into so->opt
