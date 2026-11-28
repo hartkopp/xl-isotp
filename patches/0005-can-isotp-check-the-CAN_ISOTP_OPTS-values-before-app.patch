@@ -1,7 +1,7 @@
-From aac583f311efada42575420fcf7593d3699395da Mon Sep 17 00:00:00 2001
+From 1f741973a2680ab70ea6b68916cf36059adce594 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 13:13:51 +0000
-Subject: [PATCH 04/23] can: isotp: check the CAN_ISOTP_OPTS values before
+Subject: [PATCH 05/23] can: isotp: check the CAN_ISOTP_OPTS values before
  applying them
 
 isotp_setsockopt_locked() copies the CAN_ISOTP_OPTS values into so->opt
@@ -27,10 +27,10 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 9 insertions(+), 11 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 3b83507..7be3d93 100644
+index 650d93e..8817f0e 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
-@@ -1744,22 +1744,19 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+@@ -1740,22 +1740,19 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
  		return -EAGAIN;
  
  	switch (optname) {
@@ -61,7 +61,7 @@ index 3b83507..7be3d93 100644
  		/* check for frame_txtime changes (0 => no changes) */
  		if (so->opt.frame_txtime) {
  			if (so->opt.frame_txtime == CAN_ISOTP_FRAME_TXTIME_ZERO)
-@@ -1768,6 +1765,7 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+@@ -1764,6 +1761,7 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
  				so->frame_txtime = so->opt.frame_txtime;
  		}
  		break;

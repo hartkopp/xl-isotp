@@ -1,4 +1,4 @@
-From 475bb65acdb1d2911b78554943972131a56e4477 Mon Sep 17 00:00:00 2001
+From 7416332e8f863cca92f3be17a771971b11fa1c49 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 13 Feb 2026 13:41:26 +0100
 Subject: [PATCH 21/23] can: isotp: change return type of functions to void

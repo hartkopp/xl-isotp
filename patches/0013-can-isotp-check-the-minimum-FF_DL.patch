@@ -1,7 +1,7 @@
-From 6ed772c58af4cdc469b73cf34cb81d6d6f148ddd Mon Sep 17 00:00:00 2001
+From 05167d6888d548ceed61900cb8798b1638f61e29 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 21 Nov 2026 08:44:26 +0000
-Subject: [PATCH 12/23] can: isotp: check the minimum FF_DL
+Subject: [PATCH 13/23] can: isotp: check the minimum FF_DL
 
 ISO 15765-2 requires FF_DL >= FF_DLmin: a PDU that fits into a SF must
 not be segmented.
@@ -27,10 +27,10 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 8905732..303ac29 100644
+index e73e996..e1e6f94 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
-@@ -575,8 +575,8 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
+@@ -579,8 +579,8 @@ static int isotp_rcv_sf(struct sock *sk, struct canfd_frame *cf, int pcilen,
  static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  {
  	struct isotp_sock *so = isotp_sk(sk);
@@ -40,7 +40,7 @@ index 8905732..303ac29 100644
  	int ff_pci_sz;
  
  	hrtimer_cancel(&so->rxtimer);
-@@ -609,10 +609,13 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+@@ -613,10 +613,13 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  			return 1;
  	}
  

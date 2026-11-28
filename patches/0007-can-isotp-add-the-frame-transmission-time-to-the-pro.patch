@@ -1,7 +1,7 @@
-From f286a859209a34dd19ceb03c59987022c3d86ff7 Mon Sep 17 00:00:00 2001
+From 2181edc98b9155c660df89ac7bd3bf05e467ca09 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 13:13:51 +0000
-Subject: [PATCH 06/23] can: isotp: add the frame transmission time to the
+Subject: [PATCH 07/23] can: isotp: add the frame transmission time to the
  protocol timeouts
 
 The frame_txtime element of struct can_isotp_options is documented as
@@ -77,7 +77,7 @@ index bd99091..a2e5aa6 100644
  	__u8  ext_address;	/* set address for extended addressing	*/
  				/* __u8 value : extended address	*/
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 4320c31..8dd26a3 100644
+index 7b88b3a..ce541e5 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -127,6 +127,7 @@ MODULE_PARM_DESC(max_pdu_size, "maximum isotp pdu size (default "
@@ -88,7 +88,7 @@ index 4320c31..8dd26a3 100644
  
  /* so->tx_result[so->tx_gen % ISOTP_TX_RESULT_SLOTS] holds the packed value
   * (err << ISOTP_TX_RESULT_GEN_BITS | gen) for each tx generation slot, so it
-@@ -349,7 +350,8 @@ static int isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
+@@ -353,7 +354,8 @@ static int isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)
  	so->lastrxcf_tstamp = ktime_set(0, 0);
  
  	/* start rx timeout watchdog */
@@ -98,7 +98,7 @@ index 4320c31..8dd26a3 100644
  		      HRTIMER_MODE_REL_SOFT);
  	return 0;
  }
-@@ -1333,7 +1335,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+@@ -1329,7 +1331,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
  	}
  	/* WAIT_FIRST_FC for standard FF, else stays ISOTP_SENDING */
  	WRITE_ONCE(so->tx.state, new_state);
@@ -107,7 +107,7 @@ index 4320c31..8dd26a3 100644
  		      HRTIMER_MODE_REL_SOFT);
  	spin_unlock_bh(&so->rx_lock);
  
-@@ -1751,6 +1753,11 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
+@@ -1747,6 +1749,11 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,
  		if (hweight32(opt->flags & ISOTP_ALL_BC_FLAGS) > 1)
  			return -EINVAL;
  

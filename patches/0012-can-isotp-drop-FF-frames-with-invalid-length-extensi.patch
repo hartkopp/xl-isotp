@@ -1,7 +1,7 @@
-From ecb9f6537a821439a7fb06ced7124c30daba6679 Mon Sep 17 00:00:00 2001
+From 35ab245373c64a91263dbf287d384cc0b45e84ca Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 29 Dec 2025 21:12:20 +0100
-Subject: [PATCH 11/23] can: isotp: drop FF frames with invalid length
+Subject: [PATCH 12/23] can: isotp: drop FF frames with invalid length
  extension
 
 The FF data length usually consists of 12 bits for values up to 4095 byte.
@@ -19,10 +19,10 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 283c7d6..8905732 100644
+index 798c1b4..e73e996 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
-@@ -603,6 +603,10 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+@@ -607,6 +607,10 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  		so->rx.len += cf->data[ae + 4] << 8;
  		so->rx.len += cf->data[ae + 5];
  		ff_pci_sz = FF_PCI_SZ32;

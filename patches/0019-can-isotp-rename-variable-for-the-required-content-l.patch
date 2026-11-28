@@ -1,4 +1,4 @@
-From 880c507cba76f752235c1bc4aa2f8087652d6831 Mon Sep 17 00:00:00 2001
+From b6fbc5a51dfecae778385fb3307f529520487613 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 18:47:54 +0100
 Subject: [PATCH 19/23] can: isotp: rename variable for the required content
