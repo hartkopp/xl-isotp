@@ -1,0 +1,280 @@
+From 493f0f3c7813097abf094c1dbf9a55e2146b4aa0 Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Sat, 7 Nov 2026 12:05:33 +0100
+Subject: [PATCH 03/22] can: enable memcg accounting for user triggered
+ allocations
+
+Unprivileged users can create CAN sockets and trigger allocations that
+stay in the kernel for the lifetime of the socket or of the related
+objects. E.g. each CAN_BCM RX_SETUP for a new CAN ID creates a bcm_op
+with optional frame arrays of up to 257 CAN FD frames and a CAN
+receiver, without requiring a CAN device (ifindex 0) and without a
+limit for the number of ops per socket.
+
+None of these allocations are accounted to the memory cgroup of the
+process that triggers them. So a process can bypass the memory limit
+of its cgroup, e.g. of a container or a systemd service, and exhaust
+the memory of the whole system. The OOM killer can not attribute this
+kernel memory to the responsible process either, which has nearly no
+RSS, and terminates unrelated processes instead.
+
+Enable memcg accounting for these allocations, as it has been done for
+other objects that can be created by unprivileged users. This does not
+introduce any new CAN specific limit and does not make assumptions
+about the number of sockets, filters or BCM operations an application
+needs. The CAN related kernel memory is just charged to the cgroup of
+the allocating process, so that the memory limits which are already
+configured for this cgroup apply to it as well. Without a configured
+limit the behaviour is unchanged.
+
+A per socket limit for the number or the memory of the BCM operations,
+as suggested in the reports, does not bound the memory consumption, as
+a process can open many sockets and fork. Hard-coded limits can also
+break existing applications, e.g. one that monitors all 2048 SFF CAN
+IDs with individual RX operations, without a possibility to adjust
+them.
+
+The following allocations are accounted:
+
+- af_can: the CAN socket structures (e.g. struct isotp_sock contains
+  two DEFAULT_MAX_PDU_SIZE buffers), the CAN receivers of all CAN
+  protocols and the per-netns receive lists and statistics
+- bcm: the bcm_op structures and their frames/last_frames arrays
+- raw: the per-cpu uniq data and the CAN_RAW_FILTER filters
+- isotp: the TX buffer for PDUs > DEFAULT_MAX_PDU_SIZE
+- j1939: the SO_J1939_FILTER filters and the per device j1939_priv,
+  which is created by the first bind() to a CAN device
+
+The CAN socket structures are allocated with GFP_KERNEL_ACCOUNT in
+sk_alloc() instead of creating dedicated slab caches with
+proto_register(), as the CAN protocols copy socket options directly
+from their socket structures to user space, which would require
+usercopy whitelists for these caches.
+
+memdup_sockptr() does not support memcg accounting, so the filters are
+allocated with the GFP_USER | __GFP_NOWARN flags of memdup_sockptr()
+plus __GFP_ACCOUNT and copied explicitly.
+
+The isotp RX buffer for PDUs > DEFAULT_MAX_PDU_SIZE is allocated in
+softirq context and is not accounted. It could be charged to the memory
+cgroup of the socket with set_active_memcg(), but a charge in atomic
+context can not reclaim memory. With GFP_ATOMIC the charge is forced,
+which allows a cgroup to exceed its limit by up to max_pdu_size per
+socket. Without __GFP_HIGH the allocation fails at the limit, so the
+reception of the PDU fails, and it loses the access to the atomic
+reserves on systems without a memory limit as well. This buffer is only
+used when the administrator has increased the max_pdu_size module
+parameter. The j1939 RX sessions are allocated in softirq context
+before a socket is involved and can not be attributed to a process.
+The j1939 TX sessions only exist for the duration of a transfer and the
+can-gw jobs require CAP_NET_ADMIN in the initial user namespace, so
+they are not changed. The local j1939 ECUs created by bind() are
+allocated with BH disabled and their number is limited by the number of
+bound j1939 sockets, which are accounted. Temporary buffers that are
+freed before the syscall returns are not accounted either.
+
+Reported-by: Sashiko <sashiko-bot@kernel.org>
+Closes: https://sashiko.dev/#/patchset/20260707-bcm_fixes-v5-0-c3c74f8d8ff7@hartkopp.net
+Reported-by: Zihan Xi <zihanx@nebusec.ai>
+Closes: https://lore.kernel.org/linux-can/cover.1793089479.git.zihanx@nebusec.ai/
+Link: https://lore.kernel.org/linux-can/350df96b-5f69-490e-b39e-ed6e9bca4754@hartkopp.net/
+Cc: Oleksij Rempel <o.rempel@pengutronix.de>
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/af_can.c       | 12 +++++++-----
+ net/can/bcm.c          | 10 +++++-----
+ net/can/isotp.c        |  9 +++++++--
+ net/can/j1939/main.c   |  2 +-
+ net/can/j1939/socket.c | 12 +++++++++---
+ net/can/raw.c          | 14 ++++++++++----
+ 6 files changed, 39 insertions(+), 20 deletions(-)
+
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index 0f3051a..6f958c2 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -155,7 +155,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 
+ 	sock->ops = cp->ops;
+ 
+-	sk = sk_alloc(net, PF_CAN, GFP_KERNEL, cp->prot, kern);
++	sk = sk_alloc(net, PF_CAN, GFP_KERNEL_ACCOUNT, cp->prot, kern);
+ 	if (!sk) {
+ 		err = -ENOMEM;
+ 		goto errout;
+@@ -830,14 +830,16 @@ EXPORT_SYMBOL(can_proto_unregister);
+ static int can_pernet_init(struct net *net)
+ {
+ 	spin_lock_init(&net->can.rcvlists_lock);
+-	net->can.rx_alldev_list = kzalloc_obj(*net->can.rx_alldev_list);
++	net->can.rx_alldev_list = kzalloc_obj(*net->can.rx_alldev_list,
++					      GFP_KERNEL_ACCOUNT);
+ 	if (!net->can.rx_alldev_list)
+ 		goto out;
+ 	spin_lock_init(&net->can.rx_alldev_list->lock);
+-	net->can.pkg_stats = kzalloc_obj(*net->can.pkg_stats);
++	net->can.pkg_stats = kzalloc_obj(*net->can.pkg_stats, GFP_KERNEL_ACCOUNT);
+ 	if (!net->can.pkg_stats)
+ 		goto out_free_rx_alldev_list;
+-	net->can.rcv_lists_stats = kzalloc_obj(*net->can.rcv_lists_stats);
++	net->can.rcv_lists_stats = kzalloc_obj(*net->can.rcv_lists_stats,
++					       GFP_KERNEL_ACCOUNT);
+ 	if (!net->can.rcv_lists_stats)
+ 		goto out_free_pkg_stats;
+ 
+@@ -919,7 +921,7 @@ static __init int can_init(void)
+ 	pr_info("can: controller area network core\n");
+ 
+ 	rcv_cache = kmem_cache_create("can_receiver", sizeof(struct receiver),
+-				      0, 0, NULL);
++				      0, SLAB_ACCOUNT, NULL);
+ 	if (!rcv_cache)
+ 		return -ENOMEM;
+ 
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index dc9e289..f3d93a2 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -1161,7 +1161,7 @@ static int bcm_tx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
+ 	} else {
+ 		/* insert new BCM operation for the given can_id */
+ 
+-		op = kzalloc(OPSIZ, GFP_KERNEL);
++		op = kzalloc(OPSIZ, GFP_KERNEL_ACCOUNT);
+ 		if (!op)
+ 			return -ENOMEM;
+ 
+@@ -1178,7 +1178,7 @@ static int bcm_tx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
+ 		if (msg_head->nframes > 1) {
+ 			op->frames = kmalloc_array(msg_head->nframes,
+ 						   op->cfsiz,
+-						   GFP_KERNEL);
++						   GFP_KERNEL_ACCOUNT);
+ 			if (!op->frames) {
+ 				kfree(op);
+ 				return -ENOMEM;
+@@ -1409,7 +1409,7 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
+ 
+ 	} else {
+ 		/* insert new BCM operation for the given can_id */
+-		op = kzalloc(OPSIZ, GFP_KERNEL);
++		op = kzalloc(OPSIZ, GFP_KERNEL_ACCOUNT);
+ 		if (!op)
+ 			return -ENOMEM;
+ 
+@@ -1424,7 +1424,7 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
+ 			/* create array for CAN frames and copy the data */
+ 			op->frames = kmalloc_array(msg_head->nframes,
+ 						   op->cfsiz,
+-						   GFP_KERNEL);
++						   GFP_KERNEL_ACCOUNT);
+ 			if (!op->frames) {
+ 				kfree(op);
+ 				return -ENOMEM;
+@@ -1433,7 +1433,7 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
+ 			/* create and init array for received CAN frames */
+ 			op->last_frames = kcalloc(msg_head->nframes,
+ 						  op->cfsiz,
+-						  GFP_KERNEL);
++						  GFP_KERNEL_ACCOUNT);
+ 			if (!op->last_frames) {
+ 				kfree(op->frames);
+ 				kfree(op);
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 98a7e48..3b83507 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -609,7 +609,12 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 	if (so->rx.len + ae + off + ff_pci_sz < so->rx.ll_dl)
+ 		return 1;
+ 
+-	/* PDU size > default => try max_pdu_size */
++	/* PDU size > default => try max_pdu_size
++	 *
++	 * This buffer is not accounted to a memory cgroup: In softirq
++	 * context the charge would either have to be forced beyond the
++	 * limit of the cgroup or the reception would fail at the limit.
++	 */
+ 	if (so->rx.len > so->rx.buflen && so->rx.buflen < max_pdu_size) {
+ 		u8 *newbuf = kmalloc(max_pdu_size, GFP_ATOMIC);
+ 
+@@ -1194,7 +1199,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 
+ 	/* PDU size > default => try max_pdu_size */
+ 	if (size > so->tx.buflen && so->tx.buflen < max_pdu_size) {
+-		u8 *newbuf = kmalloc(max_pdu_size, GFP_KERNEL);
++		u8 *newbuf = kmalloc(max_pdu_size, GFP_KERNEL_ACCOUNT);
+ 
+ 		if (newbuf) {
+ 			so->tx.buf = newbuf;
+diff --git a/net/can/j1939/main.c b/net/can/j1939/main.c
+index d9384cf..77adb81 100644
+--- a/net/can/j1939/main.c
++++ b/net/can/j1939/main.c
+@@ -128,7 +128,7 @@ static struct j1939_priv *j1939_priv_create(struct net_device *ndev)
+ {
+ 	struct j1939_priv *priv;
+ 
+-	priv = kzalloc_obj(*priv);
++	priv = kzalloc_obj(*priv, GFP_KERNEL_ACCOUNT);
+ 	if (!priv)
+ 		return NULL;
+ 
+diff --git a/net/can/j1939/socket.c b/net/can/j1939/socket.c
+index 50a598e..85b7e88 100644
+--- a/net/can/j1939/socket.c
++++ b/net/can/j1939/socket.c
+@@ -716,9 +716,15 @@ static int j1939_sk_setsockopt(struct socket *sock, int level, int optname,
+ 				return -EINVAL;
+ 
+ 			count = optlen / sizeof(*filters);
+-			filters = memdup_sockptr(optval, optlen);
+-			if (IS_ERR(filters))
+-				return PTR_ERR(filters);
++			filters = kmalloc(optlen, GFP_USER | __GFP_NOWARN |
++					  __GFP_ACCOUNT);
++			if (!filters)
++				return -ENOMEM;
++
++			if (copy_from_sockptr(filters, optval, optlen)) {
++				kfree(filters);
++				return -EFAULT;
++			}
+ 
+ 			for (f = filters, c = count; c; f++, c--) {
+ 				f->name &= f->name_mask;
+diff --git a/net/can/raw.c b/net/can/raw.c
+index cf17704..da462e9 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -418,7 +418,7 @@ static int raw_init(struct sock *sk)
+ 	ro->join_filters     = 0;
+ 
+ 	/* alloc_percpu provides zero'ed memory */
+-	ro->uniq = alloc_percpu(struct uniqframe);
++	ro->uniq = alloc_percpu_gfp(struct uniqframe, GFP_KERNEL_ACCOUNT);
+ 	if (unlikely(!ro->uniq))
+ 		return -ENOMEM;
+ 
+@@ -763,9 +763,15 @@ static int raw_setsockopt(struct socket *sock, int level, int optname,
+ 
+ 		if (count > 1) {
+ 			/* filter does not fit into dfilter => alloc space */
+-			filter = memdup_sockptr(optval, optlen);
+-			if (IS_ERR(filter))
+-				return PTR_ERR(filter);
++			filter = kmalloc(optlen, GFP_USER | __GFP_NOWARN |
++					 __GFP_ACCOUNT);
++			if (!filter)
++				return -ENOMEM;
++
++			if (copy_from_sockptr(filter, optval, optlen)) {
++				kfree(filter);
++				return -EFAULT;
++			}
+ 		} else if (count == 1) {
+ 			if (copy_from_sockptr(&sfilter, optval, sizeof(sfilter)))
+ 				return -EFAULT;
+-- 
+2.43.0
+

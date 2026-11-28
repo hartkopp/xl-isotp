@@ -1,0 +1,38 @@
+From d68f528ce67cc12b1561fbd60ffdc53c1c465aee Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Mon, 29 Dec 2025 21:12:20 +0100
+Subject: [PATCH 10/22] can: isotp: drop FF frames with invalid length
+ extension
+
+The FF data length usually consists of 12 bits for values up to 4095 byte.
+ISO 15765-2:2016 introduced an escape sequence where the 32 bit length
+information is retrieved from the following 4 byte when the FF data length
+is set to the reserved value 0.
+
+This escape sequence is only allowed for FF data length values greater than
+4095 and therefore PDUs with length values that would also fit into the 12
+bit value representation shall be ignored according to ISO 15765-2:2016.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index e51a513..3167a06 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -603,6 +603,10 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
+ 		so->rx.len += cf->data[ae + 4] << 8;
+ 		so->rx.len += cf->data[ae + 5];
+ 		ff_pci_sz = FF_PCI_SZ32;
++
++		/* unneeded escape sequence => ignore PDU according to spec */
++		if (so->rx.len <= MAX_12BIT_PDU_SIZE)
++			return 1;
+ 	}
+ 
+ 	/* take care of a potential SF_DL ESC offset for TX_DL > 8 */
+-- 
+2.43.0
+

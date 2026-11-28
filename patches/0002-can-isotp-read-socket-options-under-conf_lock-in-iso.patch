@@ -1,0 +1,117 @@
+From 63bc11327f2fef9b65dd5d2df7f49681392f1a0f Mon Sep 17 00:00:00 2001
+From: Oliver Hartkopp <socketcan@hartkopp.net>
+Date: Fri, 13 Nov 2026 11:00:14 +0000
+Subject: [PATCH 02/22] can: isotp: read socket options under conf_lock in
+ isotp_getsockopt()
+
+isotp_getsockopt() copies the CAN_ISOTP socket options to user space
+directly from the socket without taking conf_lock, while
+isotp_setsockopt() updates them under conf_lock. For the options that
+consist of several values, i.e. CAN_ISOTP_OPTS, CAN_ISOTP_RECV_FC and
+CAN_ISOTP_LL_OPTS, a concurrent setsockopt() can lead to a mix of old
+and new values.
+
+Read the option values under conf_lock into a local variable and copy
+them to user space after mutex_unlock(), like isotp_setsockopt() does
+it in the other direction. So no user space access happens while the
+mutex is held and a stalled copy can not block isotp_notify() under
+RTNL.
+
+The socket options have been read without a lock before commit
+"can: isotp: use a private mutex instead of lock_sock()" as well, so
+this is no fix.
+
+Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
+---
+ net/can/isotp.c | 34 +++++++++++++++++++++++++---------
+ 1 file changed, 25 insertions(+), 9 deletions(-)
+
+diff --git a/net/can/isotp.c b/net/can/isotp.c
+index 642fec5..98a7e48 100644
+--- a/net/can/isotp.c
++++ b/net/can/isotp.c
+@@ -182,7 +182,7 @@ struct isotp_sock {
+ 	struct list_head notifier;
+ 	wait_queue_head_t wait;
+ 	spinlock_t rx_lock; /* protect single thread state machine */
+-	struct mutex conf_lock; /* protects bind and setsockopt */
++	struct mutex conf_lock; /* protects bind and sockopts */
+ };
+ 
+ static LIST_HEAD(isotp_notifier_list);
+@@ -1862,8 +1862,14 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
+ {
+ 	struct sock *sk = sock->sk;
+ 	struct isotp_sock *so = isotp_sk(sk);
++	union {
++		struct can_isotp_options opt;
++		struct can_isotp_fc_options rxfc;
++		struct can_isotp_ll_options ll;
++		u32 stmin;
++	} val;
+ 	int len;
+-	void *val;
++	int err = 0;
+ 
+ 	if (level != SOL_CAN_ISOTP)
+ 		return -EINVAL;
+@@ -1872,39 +1878,49 @@ static int isotp_getsockopt(struct socket *sock, int level, int optname,
+ 	if (len < 0)
+ 		return -EINVAL;
+ 
++	/* Read the option value under so->conf_lock and copy it to user
++	 * space after mutex_unlock(), see isotp_setsockopt().
++	 */
++	mutex_lock(&so->conf_lock);
++
+ 	switch (optname) {
+ 	case CAN_ISOTP_OPTS:
+ 		len = min_t(int, len, sizeof(struct can_isotp_options));
+-		val = &so->opt;
++		val.opt = so->opt;
+ 		break;
+ 
+ 	case CAN_ISOTP_RECV_FC:
+ 		len = min_t(int, len, sizeof(struct can_isotp_fc_options));
+-		val = &so->rxfc;
++		val.rxfc = so->rxfc;
+ 		break;
+ 
+ 	case CAN_ISOTP_TX_STMIN:
+ 		len = min_t(int, len, sizeof(u32));
+-		val = &so->force_tx_stmin;
++		val.stmin = so->force_tx_stmin;
+ 		break;
+ 
+ 	case CAN_ISOTP_RX_STMIN:
+ 		len = min_t(int, len, sizeof(u32));
+-		val = &so->force_rx_stmin;
++		val.stmin = so->force_rx_stmin;
+ 		break;
+ 
+ 	case CAN_ISOTP_LL_OPTS:
+ 		len = min_t(int, len, sizeof(struct can_isotp_ll_options));
+-		val = &so->ll;
++		val.ll = so->ll;
+ 		break;
+ 
+ 	default:
+-		return -ENOPROTOOPT;
++		err = -ENOPROTOOPT;
+ 	}
+ 
++	mutex_unlock(&so->conf_lock);
++
++	if (err)
++		return err;
++
+ 	if (put_user(len, optlen))
+ 		return -EFAULT;
+-	if (copy_to_user(optval, val, len))
++	if (copy_to_user(optval, &val, len))
+ 		return -EFAULT;
+ 	return 0;
+ }
+-- 
+2.43.0
+
