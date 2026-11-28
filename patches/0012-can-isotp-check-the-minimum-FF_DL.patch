@@ -1,16 +1,25 @@
-From 0e481ea6c577b2b59463c3509f5e62b6d2af19cb Mon Sep 17 00:00:00 2001
+From 6ed772c58af4cdc469b73cf34cb81d6d6f148ddd Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 21 Nov 2026 08:44:26 +0000
 Subject: [PATCH 12/23] can: isotp: check the minimum FF_DL
 
 ISO 15765-2 requires FF_DL >= FF_DLmin: a PDU that fits into a SF must
-not be segmented. The rx check only ensured that a CF is needed and
-contained a SF_DL escape offset for LL_DL > 8 which is only required on
-the tx side. So e.g. FF_DL 7 was accepted for LL_DL 8.
+not be segmented.
+
+The rx check in isotp_rcv_ff() added a SF_DL escape offset for LL_DL > 8
+on the wrong side and only rejected FF_DL < LL_DL - ae - off - ff_pci_sz.
+So it did not even ensure that a CF is needed. It accepted FFs whose
+FF_DL fits into the FF itself (e.g. FF_DL 6 for LL_DL 8, FF_DL 61 and 62
+for LL_DL 64) and FFs whose FF_DL fits into a SF (e.g. FF_DL 7 for
+LL_DL 8). In both cases the receiver sent a FC and waited for a CF that
+a compliant sender never sends.
 
 Check the FF_DL against the maximum SF_DL of the sender LL_DL like
 isotp_sendmsg() does on the tx path. As only FF_DL is on the left side
 the check does not wrap around for FF_DL values close to 2^32.
+
+As only FFs from a non-compliant sender are affected and the copied FF
+data stays within the receive buffer, there is no Fixes tag.
 
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---

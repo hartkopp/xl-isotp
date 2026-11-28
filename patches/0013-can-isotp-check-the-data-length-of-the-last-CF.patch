@@ -1,4 +1,4 @@
-From 5e5a9fddc85e06ad33259ca07cdb090c22c16aa1 Mon Sep 17 00:00:00 2001
+From 9411c62427bc42e7f911d280a3ed3edb82bb7dc2 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:37 +0000
 Subject: [PATCH 13/23] can: isotp: check the data length of the last CF

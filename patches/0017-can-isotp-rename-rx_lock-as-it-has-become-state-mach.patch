@@ -1,4 +1,4 @@
-From 397bfa227f93b347e37f58348bb8483190923271 Mon Sep 17 00:00:00 2001
+From b9e19b3f9cddc65be58e0e5c3b6fbbeca640476c Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 13 Jul 2026 14:23:43 +0200
 Subject: [PATCH 17/23] can: isotp: rename rx_lock as it has become state
