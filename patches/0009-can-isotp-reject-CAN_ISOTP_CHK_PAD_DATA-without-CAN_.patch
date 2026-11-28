@@ -1,7 +1,7 @@
-From 955d7c7dd3c721b37df2470a7d7485177197a32e Mon Sep 17 00:00:00 2001
+From 0c6cb3bb26410d575d041062cb5abb2181206fce Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 12:48:49 +0000
-Subject: [PATCH 08/22] can: isotp: reject CAN_ISOTP_CHK_PAD_DATA without
+Subject: [PATCH 09/23] can: isotp: reject CAN_ISOTP_CHK_PAD_DATA without
  CAN_ISOTP_RX_PADDING
 
 CAN_ISOTP_CHK_PAD_DATA checks the padding bytes of received frames
@@ -20,7 +20,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 5 insertions(+)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 6471c0e..0af1a68 100644
+index a95ef15..05d5db4 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -1758,6 +1758,11 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,

@@ -1,7 +1,7 @@
-From 1e5a90a7a1284c60251ca8b629f237c07df744e1 Mon Sep 17 00:00:00 2001
+From f44527920a2856a9ccb30b1a63dafeb0018b6d12 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:16:36 +0100
-Subject: [PATCH 21/22] can: isotp: rename pointer in isotp_rcv() prototype
+Subject: [PATCH 22/23] can: isotp: rename pointer in isotp_rcv() prototype
 
 Preparation for CAN XL support where a 'data' pointer is commonly used.
 
@@ -11,7 +11,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index a918258..47f91e8 100644
+index 2a280e7..15a9098 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -772,9 +772,9 @@ static void isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,

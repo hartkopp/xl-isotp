@@ -1,7 +1,7 @@
-From 493f0f3c7813097abf094c1dbf9a55e2146b4aa0 Mon Sep 17 00:00:00 2001
+From 238c973c9f298f67943337028eb4c7761c4911ea Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 7 Nov 2026 12:05:33 +0100
-Subject: [PATCH 03/22] can: enable memcg accounting for user triggered
+Subject: [PATCH 03/23] can: enable memcg accounting for user triggered
  allocations
 
 Unprivileged users can create CAN sockets and trigger allocations that

@@ -1,7 +1,7 @@
-From 5db58690df125f2e89f11bd0cec0f94b333d9c07 Mon Sep 17 00:00:00 2001
+From 5fd2403288548939c828e6890c9ff07defda74ff Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 13 Jul 2026 14:23:43 +0200
-Subject: [PATCH 16/22] can: isotp: rename rx_lock as it has become state
+Subject: [PATCH 17/23] can: isotp: rename rx_lock as it has become state
  machine lock
 
 rx_lock has been used to lock some receive path functionalities.
@@ -14,7 +14,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 26 insertions(+), 26 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index fc03ded..8e8f838 100644
+index 5b46fda..8eead4a 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -182,7 +182,7 @@ struct isotp_sock {

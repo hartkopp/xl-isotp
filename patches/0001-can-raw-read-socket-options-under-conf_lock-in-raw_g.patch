@@ -1,7 +1,7 @@
-From ad3cbf8bc362323ed42de0d56ed841151efd804a Mon Sep 17 00:00:00 2001
+From ef0d1a802f0aea7ee1f89ad72cc5e37e262e0332 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 13 Nov 2026 10:59:58 +0000
-Subject: [PATCH 01/22] can: raw: read socket options under conf_lock in
+Subject: [PATCH 01/23] can: raw: read socket options under conf_lock in
  raw_getsockopt()
 
 raw_getsockopt() only takes conf_lock for CAN_RAW_FILTER. All other

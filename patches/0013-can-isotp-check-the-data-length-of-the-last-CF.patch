@@ -1,7 +1,7 @@
-From a189045f8d62446dbb47b732cef8e266058321e0 Mon Sep 17 00:00:00 2001
+From 0f1b5905f33557615b9ebe04eb5400d9ece14bd4 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:37 +0000
-Subject: [PATCH 12/22] can: isotp: check the data length of the last CF
+Subject: [PATCH 13/23] can: isotp: check the data length of the last CF
 
 A CF shorter than LL_DL is only allowed as last CF and therefore has to
 carry all missing bytes of the PDU. But the missing bytes were compared
@@ -19,7 +19,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 8aeec4c..8ae314f 100644
+index 9b86fc3..30cd681 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -674,8 +674,10 @@ static int isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
