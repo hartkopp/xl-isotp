@@ -1,4 +1,4 @@
-# CAN-Patches für can-next: memcg, CAN_ISOTP-Fixes und Aufräum-Patches
+# CAN-Patches für can-next mit CAN_ISOTP-Aufteilung und CAN XL
 
 Die Patches wenden per `git am` auf den CAN-Code dieses Repositorys an
 (`main`, "Add the CAN related documentation" auf "Update to Linux 7.4-rc4+
@@ -6,8 +6,9 @@ CAN code", Mainline `9437ee8b6cf6`). Die Patches 1 bis 7 der Serie v7
 (RTNL-Stalls, CAN_ISOTP- und netlink-Fixes) sind über den net-Tree in
 Mainline angekommen und hier nicht mehr enthalten.
 
-Der Stand entspricht `75_can_next` nach dem Sashiko-Review der als
-"[PATCH can-next 00/22]" verschickten Serie.
+Die Patches 1 bis 22 entsprechen `75_net_next_v3` (Stand `75_can_next`
+nach dem Sashiko-Review der als "[PATCH can-next 00/22]" verschickten
+Serie). Die Patches 23 bis 28 teilen CAN_ISOTP auf und ergänzen CAN XL.
 
 ## Patches 1 bis 3: Rest der bisherigen Serie
 
@@ -104,10 +105,80 @@ ungültige Frames, die ohnehin jeder Knoten mit gültigen Frames stören kann.
   geprüft. Das Define steht in `isotp.h` in einem eigenen Block vor den
   Defaults.
 
+## Patches 23 bis 28: CAN_ISOTP-Aufteilung und CAN XL
+
+| # | Patch | bisher (`split_v2`) |
+|---|---|---|
+| 23 | can: isotp: move isotp.c into in separate directory | 31 |
+| 24 | can: isotp: move common definitions to separate header file | 32 |
+| 25 | can: isotp: split isotp code | 33 |
+| 26 | can: isotp: rework CAN frame structure access for CAN XL | 34 |
+| 27 | can: isotp: add CAN XL protocol extension support | 35 |
+| 28 | can: isotp: add official support for 1-to-n multicast mode | 36 |
+
+- **Patch 23** verschiebt `net/can/isotp.c` nach `net/can/isotp/isotp.c`
+  mit eigenem Makefile.
+- **Patch 24** verschiebt Defines, `enum` und Strukturen nach
+  `isotp_defines.h`.
+- **Patch 25** teilt den Code in `isotp.c` (Socket-API), `protocolrx.c`,
+  `protocoltx.c` und `hrtimer.c` mit `isotp_protocol.h` und
+  `isotp_hrtimer.h` auf.
+- **Patch 26** greift über Datenzeiger und Datenlänge statt über
+  `struct canfd_frame` auf die CAN-Frames zu und führt Hilfsfunktionen für
+  Frame-Header und PCI ein.
+- **Patch 27** ergänzt die Socket-Option `CAN_ISOTP_XL_OPTS`, die
+  CAN-XL-Frame-Header, die SF-Längenkodierung für CAN XL und die Kapselung
+  der CiA SDTs 6/7/9.
+- **Patch 28** führt den N_PCI-Typ Multicast First Frame (MF) mit
+  `CAN_ISOTP_MF_BROADCAST` ein.
+
+Gegenüber `split_v2` sind die Änderungen der Patches 1 bis 22 übernommen:
+
+- Patch 25 übernimmt die Funktionen aus dem `isotp.c` nach Patch 22, also
+  mit 1-s-Grenze für `frame_txtime`, `frame_txtime` im CF-Broadcast-Abstand,
+  `CANFD_FDF` in den CAN FD `tx_flags`, ignoriertem `CHK_PAD_DATA` ohne
+  `RX_PADDING`, dem Locking-Kommentar in `isotp_rcv()` und ohne die
+  Behandlung ungültiger SF/FF während eines Empfangs (SF/FF beenden einen
+  laufenden Empfang wieder vor ihren Prüfungen, wie in Mainline).
+- Patch 26 bis 28 sind entsprechend angepasst. Patch 28 setzt den
+  Broadcast-Abstand auch für `CAN_ISOTP_MF_BROADCAST` aus `frame_txtime`
+  plus `CAN_ISOTP_TX_STMIN` (mit `CAN_ISOTP_FORCE_TXSTMIN`) zusammen.
+- `CAN_ISOTP_MIN_TX_DL` steht auch in Patch 26 und 27 nur bei Prüfungen von
+  TX_DL- bzw. LL_DL-Werten (z. B. TX_DL 8 für SDT 6, Mindestlänge des FF,
+  FF_DLmin). Prüfungen der CAN_DL eines Frames (Pflicht-Padding bei CAN FD,
+  LL_DL aus einem FD-FF, gepolstertes FC) nutzen `CAN_MAX_DLEN`.
+- `CANFD_FDF` in `ll.tx_flags` gelangt nur in CAN-FD-Frames; für SDT 7
+  wird nur `CANFD_BRS` ausgewertet.
+
+Die Festlegungen für CAN XL gelten unverändert:
+
+- Die N_PDU-Arten im XL-Modus unterscheiden sich nur über das FD-Flag
+  (`ll.mtu`) und das LL_DL: CC-N_PDU (`CAN_MTU`, TX_DL = 8, optionales
+  Padding), FD-N_PDU (`CANFD_MTU`, FD-TX_DL, Padding wie bei CAN FD, auch
+  mit SDT 9) und XL-N_PDU (`CAN_MTU`, TX_DL > 8, kein Padding).
+  `TX_PADDING` mit einer XL-N_PDU lehnt `isotp_bind()` ab.
+- Beim Empfang dekodiert eine FD-N_PDU einen SF mit CAN_DL > 8 nur mit dem
+  FD-Escape (N_PCI `0x00`), eine XL-N_PDU nur mit dem XL-SF-Flag
+  (`0x08 | SF_DL >> 8`). FD-N_PDUs müssen auch mit SDT 9 eine gültige
+  FD-Länge haben.
+- Die Padding-Prüfungen beim Empfang folgen auch bei XL-N_PDUs den
+  CC/FD-Regeln; die optimierte Länge (`CHK_PAD_LEN` ohne `RX_PADDING`) ist
+  für XL-N_PDUs nicht definiert. Der Empfang prüft nur, ob die Daten im
+  Frame enthalten sind, nicht die genaue Frame-Länge.
+- Der wirksame TX_DL wird in `isotp_bind()` gesetzt (XL-Modus:
+  `CAN_ISOTP_XL_OPTS`, sonst `CAN_ISOTP_LL_OPTS`); im XL-Modus prüft
+  `isotp_bind()` die MTU gegen `CANXL_HDR_SIZE` + TX_DL (mindestens
+  `CANXL_MIN_MTU`).
+- `struct can_isotp_xl_options` hat drei reservierte Bytes (`__res[3]`),
+  die 0 sein müssen.
+
 ## Prüfung
 
-- Die Patches 1 bis 22 wenden per `git am` auf `main` an; checkpatch meldet
-  nur die unbekannte Commit-ID im Fixes-Tag von Patch 4.
+- Die Patches 1 bis 28 wenden per `git am` auf `main` an; checkpatch meldet
+  nur die unbekannte Commit-ID im Fixes-Tag von Patch 4 und die
+  MAINTAINERS-Hinweise bei den Dateiverschiebungen in Patch 23 bis 25.
 - Noch nicht übersetzt und nicht zur Laufzeit getestet. Die Funktionstests
   in can-tests `functest/isotp` (Branch `isotp_ft`) sind an die Änderungen
   angepasst.
+- Die neuen Socket-Optionen (`CAN_ISOTP_XL_OPTS`, `CAN_ISOTP_MF_BROADCAST`)
+  sind in `iso15765-2.rst` noch nicht beschrieben.
