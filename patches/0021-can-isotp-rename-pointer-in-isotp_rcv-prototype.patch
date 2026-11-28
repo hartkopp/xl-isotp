@@ -1,4 +1,4 @@
-From 486ee8aa8ce0a4548b936ff5550c8422b375d5d4 Mon Sep 17 00:00:00 2001
+From e962c58742ab859131611a855c665c7091c6aa45 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:16:36 +0100
 Subject: [PATCH 21/22] can: isotp: rename pointer in isotp_rcv() prototype
@@ -11,11 +11,11 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 183d0cc..4ba3afc 100644
+index 991d1cc..2a74a1c 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
-@@ -766,9 +766,9 @@ static void isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
- 	return;
+@@ -756,9 +756,9 @@ static void isotp_rcv_cf(struct sock *sk, struct canfd_frame *cf, int ae,
+ 	isotp_send_fc(sk, ae, ISOTP_FC_CTS);
  }
  
 -static void isotp_rcv(struct sk_buff *skb, void *data)
