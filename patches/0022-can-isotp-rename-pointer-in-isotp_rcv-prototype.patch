@@ -1,4 +1,4 @@
-From 226d852a6d594b1372ca08b9055a33f32b489735 Mon Sep 17 00:00:00 2001
+From 60e05b0c8732ab7191799a5e817c56ac963df60d Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:16:36 +0100
 Subject: [PATCH 22/23] can: isotp: rename pointer in isotp_rcv() prototype

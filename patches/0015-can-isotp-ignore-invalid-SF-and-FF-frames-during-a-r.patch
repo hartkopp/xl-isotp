@@ -1,4 +1,4 @@
-From 95735eb41f40859043cd4846e541a6167a433dce Mon Sep 17 00:00:00 2001
+From 28a8dc14274ddb4831a4d4b431837a8b03f9c0a2 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 12:15:39 +0000
 Subject: [PATCH 15/23] can: isotp: ignore invalid SF and FF frames during a

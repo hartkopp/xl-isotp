@@ -1,4 +1,4 @@
-From 540b679227e2f27c61d07488d52a8bd164415d52 Mon Sep 17 00:00:00 2001
+From 826d20ececd5dd6df361275bddae9e0503065953 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 21:10:39 +0000
 Subject: [PATCH 14/23] can: isotp: do not send FC.OVFLW in listen mode

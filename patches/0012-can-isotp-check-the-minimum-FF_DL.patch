@@ -1,4 +1,4 @@
-From bceed227e47a881abed215687e57e9ad286857cb Mon Sep 17 00:00:00 2001
+From 0e481ea6c577b2b59463c3509f5e62b6d2af19cb Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 21 Nov 2026 08:44:26 +0000
 Subject: [PATCH 12/23] can: isotp: check the minimum FF_DL

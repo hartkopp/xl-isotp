@@ -1,13 +1,19 @@
-From b2110fe564b19ae50f441b2b87d7ad8eb4359f43 Mon Sep 17 00:00:00 2001
+From f5f622c88d4afe7cd68554eb6f8c589976d990c9 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:36 +0000
 Subject: [PATCH 10/23] can: isotp: drop frames without N_PCI
 
 isotp_rcv() reads the address extension and the N_PCI without checking
 the CAN frame data length. So frames with CAN_DL < ae + N_PCI_SZ are
-processed with stale data beyond CAN_DL, e.g. as SF, CF or FC.
+processed with the data bytes beyond CAN_DL, e.g. as SF, CF or FC.
 
-Drop these frames as they are no valid N_PDUs.
+As the data of the CAN frame structure is always present, the reads stay
+within the skb. But with the zero-filled data from CAN drivers a frame
+with CAN_DL 0 was processed as SF with SF_DL 0, which terminated an
+ongoing reception.
+
+Drop these frames as they are no valid N_PDUs. As only invalid frames
+are affected, there is no Fixes tag.
 
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---

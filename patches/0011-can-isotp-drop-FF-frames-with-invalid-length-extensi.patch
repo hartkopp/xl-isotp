@@ -1,4 +1,4 @@
-From c414212c00c55d0163f654a53d7ddda22e0e25c6 Mon Sep 17 00:00:00 2001
+From ecb9f6537a821439a7fb06ced7124c30daba6679 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 29 Dec 2025 21:12:20 +0100
 Subject: [PATCH 11/23] can: isotp: drop FF frames with invalid length

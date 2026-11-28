@@ -1,4 +1,4 @@
-From 40ec87d7b743f81cb045e473d82070732c43e995 Mon Sep 17 00:00:00 2001
+From 9b707f379f4bd15993802106507ed88ebdb9a896 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:36:24 +0100
 Subject: [PATCH 23/23] can: isotp: introduce CAN_ISOTP_MIN_TX_DL
