@@ -1,4 +1,4 @@
-From 238c973c9f298f67943337028eb4c7761c4911ea Mon Sep 17 00:00:00 2001
+From b2a35156c896a0b5757a3bbdebb9a7aced5e87c5 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sat, 7 Nov 2026 12:05:33 +0100
 Subject: [PATCH 03/23] can: enable memcg accounting for user triggered

@@ -1,4 +1,4 @@
-From 88757add53eb7782a6a1ab0441499e2c9f4a6002 Mon Sep 17 00:00:00 2001
+From 705c3ba499d59001fb88f65d45dea2b891f2d05d Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 11:56:13 +0000
 Subject: [PATCH 08/23] can: isotp: reject reserved STmin values in
@@ -19,7 +19,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 10 insertions(+), 2 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index e3468c5..a95ef15 100644
+index efd1b33..6540dc2 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -1774,9 +1774,17 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,

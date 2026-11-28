@@ -1,4 +1,4 @@
-From 0c6cb3bb26410d575d041062cb5abb2181206fce Mon Sep 17 00:00:00 2001
+From 1617ca7baea56b0894c24da7250b25b78647ce69 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Sun, 22 Nov 2026 12:48:49 +0000
 Subject: [PATCH 09/23] can: isotp: reject CAN_ISOTP_CHK_PAD_DATA without
@@ -20,7 +20,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 5 insertions(+)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index a95ef15..05d5db4 100644
+index 6540dc2..79a943e 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -1758,6 +1758,11 @@ static int isotp_setsockopt_locked(struct socket *sock, int optname,

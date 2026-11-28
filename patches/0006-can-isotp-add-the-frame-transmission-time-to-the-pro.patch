@@ -1,4 +1,4 @@
-From a994a8579422718b2d9d41099b4273f17706749e Mon Sep 17 00:00:00 2001
+From f286a859209a34dd19ceb03c59987022c3d86ff7 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 13:13:51 +0000
 Subject: [PATCH 06/23] can: isotp: add the frame transmission time to the

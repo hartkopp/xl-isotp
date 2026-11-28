@@ -1,4 +1,4 @@
-From 77f8b9f3f23f7e57ec3d89c4150894cb777d44ec Mon Sep 17 00:00:00 2001
+From ca5d15455ef8f3a079295f534d7f40e33a26a115 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:36 +0000
 Subject: [PATCH 10/23] can: isotp: drop frames without N_PCI
@@ -15,7 +15,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 05d5db4..b2b066e 100644
+index 79a943e..7048e88 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -779,6 +779,10 @@ static void isotp_rcv(struct sk_buff *skb, void *data)

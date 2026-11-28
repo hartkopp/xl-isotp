@@ -1,4 +1,4 @@
-From e3934ef2b9650b4279e494527045b02429a42ea6 Mon Sep 17 00:00:00 2001
+From 896f6895906c21df98191b2bfa7cd4ab860dbd17 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Wed, 18 Nov 2026 12:00:59 +0000
 Subject: [PATCH 16/23] can: isotp: drop inline keyword, let the compiler
@@ -13,7 +13,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 2ff5dbe..5b46fda 100644
+index 4c58cc9..21a178a 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -249,7 +249,7 @@ static bool isotp_tx_gen_done(struct isotp_sock *so, u32 gen)

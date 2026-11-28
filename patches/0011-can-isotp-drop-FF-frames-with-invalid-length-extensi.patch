@@ -1,4 +1,4 @@
-From 6754774bfe58dfde5719400d76530739d3189f40 Mon Sep 17 00:00:00 2001
+From 67060dd41f454f71e6c0b8950be4e8ec26600fc3 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Mon, 29 Dec 2025 21:12:20 +0100
 Subject: [PATCH 11/23] can: isotp: drop FF frames with invalid length
@@ -19,7 +19,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index b2b066e..6becede 100644
+index 7048e88..5e66736 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -603,6 +603,10 @@ static int isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)

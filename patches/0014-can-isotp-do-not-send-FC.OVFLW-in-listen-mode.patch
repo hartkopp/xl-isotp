@@ -1,4 +1,4 @@
-From 80dd1a182b945d90b21993a20d6481215425b53b Mon Sep 17 00:00:00 2001
+From f63510863db988af6d4b6c1f1828c9f2c613c896 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 21:10:39 +0000
 Subject: [PATCH 14/23] can: isotp: do not send FC.OVFLW in listen mode
@@ -17,7 +17,7 @@ Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
  1 file changed, 4 insertions(+), 8 deletions(-)
 
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 30cd681..dcd6193 100644
+index 46f4278..c59d788 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
 @@ -295,6 +295,10 @@ static int isotp_send_fc(struct sock *sk, int ae, u8 flowstatus)

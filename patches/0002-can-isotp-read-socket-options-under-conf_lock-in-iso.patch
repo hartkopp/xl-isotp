@@ -1,4 +1,4 @@
-From 9b5fb3316c3d1fdcccfd02fc8fc19b3961ade9c2 Mon Sep 17 00:00:00 2001
+From 39b833547ecacc12cd7e844e6f6a72193041c050 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 13 Nov 2026 11:00:14 +0000
 Subject: [PATCH 02/23] can: isotp: read socket options under conf_lock in
