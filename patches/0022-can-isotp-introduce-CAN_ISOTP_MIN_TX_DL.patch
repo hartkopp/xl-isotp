@@ -1,4 +1,4 @@
-From b7426ed8ef7c9bea528eef55bac60c3f0c9337bc Mon Sep 17 00:00:00 2001
+From 8feac84c9cc0cfa70fb94a6447f9e9af51b8df3b Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 19:36:24 +0100
 Subject: [PATCH 22/22] can: isotp: introduce CAN_ISOTP_MIN_TX_DL
@@ -7,21 +7,29 @@ The minimum TX_DL value is 8 and the CAN_MAX_DLEN is also 8.
 To not mix the intention and context of the defines introduce a separate
 CAN_ISOTP_MIN_TX_DL definition to perform TX_DL related checks.
 
+Use CAN_ISOTP_MIN_TX_DL where a TX_DL or LL_DL value is checked and keep
+CAN_MAX_DLEN for the checks of the CAN_DL of a CAN frame.
+
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---
- include/uapi/linux/can/isotp.h |  3 ++-
- net/can/isotp.c                | 10 +++++-----
- 2 files changed, 7 insertions(+), 6 deletions(-)
+ include/uapi/linux/can/isotp.h | 6 +++++-
+ net/can/isotp.c                | 6 +++---
+ 2 files changed, 8 insertions(+), 4 deletions(-)
 
 diff --git a/include/uapi/linux/can/isotp.h b/include/uapi/linux/can/isotp.h
-index eb8b529..fdace3a 100644
+index eb8b529..73d0dca 100644
 --- a/include/uapi/linux/can/isotp.h
 +++ b/include/uapi/linux/can/isotp.h
-@@ -165,8 +165,9 @@ struct can_isotp_ll_options {
+@@ -163,10 +163,14 @@ struct can_isotp_ll_options {
+  * consistency and copied directly into the flow control (FC) frame.
+  */
  
++/* minimum TX_DL value (link layer data length of a Classical CAN frame) */
++
++#define CAN_ISOTP_MIN_TX_DL		CAN_MAX_DLEN
++
  /* link layer default values => make use of Classical CAN frames */
  
-+#define CAN_ISOTP_MIN_TX_DL		CAN_MAX_DLEN
  #define CAN_ISOTP_DEFAULT_LL_MTU	CAN_MTU
 -#define CAN_ISOTP_DEFAULT_LL_TX_DL	CAN_MAX_DLEN
 +#define CAN_ISOTP_DEFAULT_LL_TX_DL	CAN_ISOTP_MIN_TX_DL
@@ -29,18 +37,9 @@ index eb8b529..fdace3a 100644
  
  /*
 diff --git a/net/can/isotp.c b/net/can/isotp.c
-index 2a74a1c..23019d0 100644
+index 2a74a1c..330832e 100644
 --- a/net/can/isotp.c
 +++ b/net/can/isotp.c
-@@ -402,7 +402,7 @@ static bool chk_optimized_fail(struct canfd_frame *cf, int start_index)
- 	 * start at cf.data[7] cf->len has to be 7 to be optimal.
- 	 * Note: The data[] index starts with zero.
- 	 */
--	if (cf->len <= CAN_MAX_DLEN)
-+	if (cf->len <= CAN_ISOTP_MIN_TX_DL)
- 		return (cf->len != start_index);
- 
- 	/* This relation is also valid in the non-linear DLC range, where
 @@ -612,8 +612,8 @@ static void isotp_rcv_ff(struct sock *sk, struct canfd_frame *cf, int ae)
  	}
  
@@ -61,15 +60,6 @@ index 2a74a1c..23019d0 100644
  
  	/* does the given data fit into a single frame for SF_BROADCAST? */
  	if ((isotp_bc_flags(so) == CAN_ISOTP_SF_BROADCAST) &&
-@@ -1282,7 +1282,7 @@ static int isotp_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
- 		 * This prevents a protocol caused length extension from
- 		 * CAN_DL = 8 to CAN_DL = 12 due to the SF_SL ESC handling.
- 		 */
--		if (size <= CAN_MAX_DLEN - SF_PCI_SZ4 - ae)
-+		if (size <= CAN_ISOTP_MIN_TX_DL - SF_PCI_SZ4 - ae)
- 			off = 0;
- 
- 		isotp_fill_dataframe(cf, so, ae, off);
 -- 
 2.43.0
 
