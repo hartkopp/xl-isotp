@@ -1,4 +1,4 @@
-From 9411c62427bc42e7f911d280a3ed3edb82bb7dc2 Mon Sep 17 00:00:00 2001
+From d2dfeb57647d8f7f8aadf218db468a6f155ea5e7 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Fri, 20 Nov 2026 20:33:37 +0000
 Subject: [PATCH 13/23] can: isotp: check the data length of the last CF
@@ -12,6 +12,9 @@ Drop a short CF when the missing PDU bytes exceed its possible payload
 (cf->len - ae - N_PCI_SZ). Padding is still possible as it only
 increases cf->len. isotp_rcv() ensures cf->len >= ae + N_PCI_SZ, so
 the payload size can not underflow.
+
+As only CFs from a non-compliant sender are affected and the copied CF
+data stays within the receive buffer, there is no Fixes tag.
 
 Signed-off-by: Oliver Hartkopp <socketcan@hartkopp.net>
 ---

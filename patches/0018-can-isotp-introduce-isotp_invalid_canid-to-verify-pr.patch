@@ -1,4 +1,4 @@
-From 8645b96247ee6b89c01aa4b3e2f6d418e748e825 Mon Sep 17 00:00:00 2001
+From 0d67eea56b0e57e015045626660dabf7e2e00417 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Wed, 3 Dec 2025 12:40:48 +0100
 Subject: [PATCH 18/23] can: isotp: introduce isotp_invalid_canid() to verify

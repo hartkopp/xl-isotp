@@ -1,4 +1,4 @@
-From dd61d30d1c5a13b425388f2d28d534e3cd01a199 Mon Sep 17 00:00:00 2001
+From f6772cb370ae79b211b84c2e2838a889a9e37f10 Mon Sep 17 00:00:00 2001
 From: Oliver Hartkopp <socketcan@hartkopp.net>
 Date: Tue, 16 Dec 2025 18:52:37 +0100
 Subject: [PATCH 20/23] can: isotp: rename checkpad functions returning bool
